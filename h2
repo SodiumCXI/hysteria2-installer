@@ -13,7 +13,8 @@ die()  { echo "Error: $*"; exit 1; }
 source "$STATE_FILE"
 
 _build_uri() {
-  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}"
+  local sni="${MASQ_URL#https://}"; sni="${sni%/}"
+  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}"
   [ "${CERT_MODE}" != "2" ] && uri="${uri}&insecure=1"
   echo "$uri"
 }
@@ -131,7 +132,7 @@ cmd_status() {
   echo "IP         $SERVER_IP"
   echo "Port       $PORT"
   echo "Cert       $([ "${CERT_MODE}" = "2" ] && echo 'CA-signed' || echo 'Self-signed')"
-  echo "Masq       $MASQ_URL"
+  echo "SNI        $(echo "$MASQ_URL" | sed 's|https://||;s|/||g')"
   echo ""
 }
 
@@ -147,21 +148,21 @@ cmd_modify() {
   echo "Leave blank to keep current, 'random' to regenerate password."
   echo ""
 
-  read -rp "Port           [${PORT}]: "              _in; [ -n "$_in" ] && PORT="$_in"
-  read -rp "Auth password  [${AUTH_PASS}]: "         _in
+  read -rp "Port [${PORT}]: "_in; [ -n "$_in" ] && PORT="$_in"
+  read -rp "Auth password [${AUTH_PASS}]: "_in
   if   [ "$_in" = "random" ]; then AUTH_PASS=$(rand 16)
   elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
-  read -rp "Obfs password  [${OBFS_PASS}]: "         _in
+  read -rp "Obfs password [${OBFS_PASS}]: "_in
   if   [ "$_in" = "random" ]; then OBFS_PASS=$(rand 16)
   elif [ -n "$_in" ];         then OBFS_PASS="$_in"; fi
-  read -rp "Masquerade URL [${MASQ_URL}]: "          _in; [ -n "$_in" ] && MASQ_URL="$_in"
+  local masq_display="${MASQ_URL#https://}"; masq_display="${masq_display%/}"
+  read -rp "SNI [${masq_display}]: "_in
+  if [ -n "$_in" ]; then MASQ_URL="https://${_in}/"; fi
 
-  echo ""
   echo "Certificates:"
-  echo "  1  Keep current"
-  echo "  2  Simple — self-signed, insecure=1"
-  echo "  3  CA     — CA-signed, no insecure"
-  echo ""
+  echo "  1 Keep current"
+  echo "  2 Simple — self-signed, insecure=1"
+  echo "  3 CA — CA-signed, no insecure"
   read -rp "Choose [1/2/3]: " _in
   local cert_choice="${_in:-1}"
 
@@ -191,8 +192,7 @@ cmd_modify() {
 }
 
 cmd_uninstall() {
-  echo ""
-  read -rp "Remove Hysteria2 and all data? [y/N]: " _in
+  read -rp "Remove Hysteria2 and all data? [y/n]: " _in
   [ "${_in,,}" != "y" ] && { echo "Aborted."; exit 0; }
   echo ""
 

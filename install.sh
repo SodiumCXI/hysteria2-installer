@@ -22,16 +22,14 @@ echo ""
 echo "Hysteria2 Setup"
 echo ""
 
-read -rp "Port           [443]: "                        _in; PORT="${_in:-443}"
-read -rp "Auth password  [random]: "                     _in; AUTH_PASS="${_in:-$(rand 16)}"
-read -rp "Obfs password  [random]: "                     _in; OBFS_PASS="${_in:-$(rand 16)}"
-read -rp "Masquerade URL [https://microsoft.com/]: "     _in; MASQ_URL="${_in:-https://microsoft.com/}"
+read -rp "Port [443]: "_in; PORT="${_in:-443}"
+read -rp "Auth password [random]: "_in; AUTH_PASS="${_in:-$(rand 16)}"
+read -rp "Obfs password [random]: "_in; OBFS_PASS="${_in:-$(rand 16)}"
+read -rp "SNI [google.com]: "_in; MASQ_URL="https://${_in:-google.com}/"
 
-echo ""
 echo "Certificate mode:"
-echo "  1  Simple — self-signed, insecure=1 in URI"
-echo "  2  CA     — own CA, import cert on client, no insecure"
-echo ""
+echo "  1 Simple — self-signed, insecure=1 in URI"
+echo "  2 CA — own CA, import cert on client, no insecure"
 read -rp "Choose [1/2]: " _in; CERT_MODE="${_in:-1}"
 echo ""
 
@@ -141,10 +139,10 @@ URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password
 [ "$CERT_MODE" != "2" ] && URI="${URI}&insecure=1"
 
 echo ""
-echo "IP        $SERVER_IP"
-echo "Port      $PORT"
-echo "Auth      $AUTH_PASS"
-echo "Obfs      $OBFS_PASS"
+echo "IP    $SERVER_IP"
+echo "Port  $PORT"
+echo "Auth  $AUTH_PASS"
+echo "Obfs  $OBFS_PASS"
 echo ""
 echo "$URI"
 
@@ -153,9 +151,6 @@ if [ "$CERT_MODE" = "2" ]; then
   echo "CA Certificate — save as hysteria-ca.crt and import on client:"
   echo ""
   cat /etc/hysteria/ca.crt
-  echo ""
-  echo "Windows: Win+R → certmgr.msc → Trusted Root Certification Authorities"
-  echo "         Right click → All Tasks → Import → Select hysteria-ca.crt"
 fi
 
 echo ""
