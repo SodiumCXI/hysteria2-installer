@@ -1,52 +1,51 @@
 #!/bin/bash
 set -euo pipefail
 
-[ "$EUID" -ne 0 ] && { echo "error: run as root"; exit 1; }
+[ "$EUID" -ne 0 ] && { echo "Error: run as root"; exit 1; }
 
 MANAGER_PATH="/usr/local/bin/h2"
 STATE_FILE="/etc/hysteria/.state"
 CONFIG_FILE="/etc/hysteria/config.yaml"
 
 rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
-die()  { echo "error: $*"; exit 1; }
+die()  { echo "Error: $*"; exit 1; }
 
 if command -v hysteria &>/dev/null && [ -f "$CONFIG_FILE" ]; then
-  echo "already installed  →  h2 modify / h2 uninstall"
+  echo "Hysteria2 is already installed. Use 'h2 modify' or 'h2 uninstall'."
   exit 0
 fi
 
 SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 https://ifconfig.me)
-[ -z "$SERVER_IP" ] && die "could not detect external IP"
+[ -z "$SERVER_IP" ] && die "Could not detect external IP"
 
 echo ""
-echo "hysteria2 setup"
+echo "Hysteria2 Setup"
 echo ""
 
-read -rp "port           [443]: "  _in; PORT="${_in:-443}"
-read -rp "auth password  [random]: " _in; AUTH_PASS="${_in:-$(rand 16)}"
-read -rp "obfs password  [random]: " _in; OBFS_PASS="${_in:-$(rand 16)}"
-read -rp "masquerade url [https://microsoft.com/]: " _in; MASQ_URL="${_in:-https://microsoft.com/}"
+read -rp "Port           [443]: "                        _in; PORT="${_in:-443}"
+read -rp "Auth password  [random]: "                     _in; AUTH_PASS="${_in:-$(rand 16)}"
+read -rp "Obfs password  [random]: "                     _in; OBFS_PASS="${_in:-$(rand 16)}"
+read -rp "Masquerade URL [https://microsoft.com/]: "     _in; MASQ_URL="${_in:-https://microsoft.com/}"
 
 echo ""
-echo "certificate mode"
-echo "  1  simple — self-signed, insecure=1 in uri"
-echo "  2  ca     — own CA, import cert on client, no insecure"
+echo "Certificate mode:"
+echo "  1  Simple — self-signed, insecure=1 in URI"
+echo "  2  CA     — own CA, import cert on client, no insecure"
 echo ""
-read -rp "choose [1/2]: " _in; CERT_MODE="${_in:-1}"
-echo ""
-
-echo "installing hysteria2..."
-bash <(curl -fsSL https://get.hy2.sh/)
-echo ""
+read -rp "Choose [1/2]: " _in; CERT_MODE="${_in:-1}"
 echo ""
 
-echo "generating certificates..."
+echo "Installing Hysteria2..."
+bash <(curl -fsSL https://get.hy2.sh/) 2>&1 | grep -v "^$" | sed '/Congratulation/q'
+echo ""
+
+echo "Generating certificates..."
 mkdir -p /etc/hysteria
 chown hysteria:hysteria /etc/hysteria
 chmod 750 /etc/hysteria
 
 if [ "$CERT_MODE" = "2" ]; then
-  read -rp "ca name [MyVPN-CA]: " _in; CA_NAME="${_in:-MyVPN-CA}"
+  read -rp "CA name [MyVPN-CA]: " _in; CA_NAME="${_in:-MyVPN-CA}"
   openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
   openssl req -x509 -new -nodes \
     -key /etc/hysteria/ca.key -sha256 -days 36500 \
@@ -63,21 +62,21 @@ if [ "$CERT_MODE" = "2" ]; then
     -CAcreateserial -out /etc/hysteria/server.crt \
     -days 36500 -sha256 2>/dev/null
   rm -f /etc/hysteria/server.csr
-  echo "done  ca-signed"
+  echo "Done. Mode: CA-signed"
 else
   openssl req -x509 -nodes -newkey rsa:2048 \
     -keyout /etc/hysteria/server.key \
     -out /etc/hysteria/server.crt \
     -days 36500 -subj "/CN=localhost" 2>/dev/null
-  echo "done  self-signed"
+  echo "Done. Mode: Self-signed"
 fi
 
 chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
 chmod 600 /etc/hysteria/server.key
 chmod 644 /etc/hysteria/server.crt
-echo ""
 
-echo "writing config..."
+echo ""
+echo "Writing config..."
 cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
 
@@ -110,55 +109,55 @@ MASQ_URL="${MASQ_URL}"
 CERT_MODE="${CERT_MODE}"
 STATE
 chmod 600 "$STATE_FILE"
-echo "done"
-echo ""
+echo "Done. Config: $CONFIG_FILE"
 
-echo "configuring firewall..."
+echo ""
+echo "Configuring firewall..."
 if command -v ufw &>/dev/null; then
   ufw allow "${PORT}/udp" >/dev/null 2>&1
   ufw allow "${PORT}/tcp" >/dev/null 2>&1
-  echo "done  port ${PORT} opened"
+  echo "Done. Port ${PORT} opened."
 else
-  echo "warning  ufw not found, open port ${PORT}/udp manually"
+  echo "Warning: ufw not found. Open port ${PORT}/udp manually."
 fi
-echo ""
 
-echo "starting service..."
+echo ""
+echo "Starting service..."
 systemctl enable hysteria-server >/dev/null 2>&1
 systemctl restart hysteria-server
 sleep 1
 systemctl is-active --quiet hysteria-server \
-  || die "service failed  →  journalctl -u hysteria-server -n 50"
-echo "done"
-echo ""
+  || die "Service failed. Check: journalctl -u hysteria-server -n 50"
+echo "Done. Hysteria2 is running."
 
-echo "installing h2..."
-curl -fsSL "https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2" \
-  -o "$MANAGER_PATH" || die "failed to download h2 from github"
-chmod +x "$MANAGER_PATH"
-echo "done"
 echo ""
+echo "Installing h2..."
+curl -fsSL "https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2" \
+  -o "$MANAGER_PATH" || die "Failed to download h2 from GitHub"
+chmod +x "$MANAGER_PATH"
+echo "Done. h2 installed to $MANAGER_PATH"
 
 URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}"
 [ "$CERT_MODE" != "2" ] && URI="${URI}&insecure=1"
 
-echo "ip       $SERVER_IP"
-echo "port     $PORT"
-echo "auth     $AUTH_PASS"
-echo "obfs     $OBFS_PASS"
+echo ""
+echo "IP        $SERVER_IP"
+echo "Port      $PORT"
+echo "Auth      $AUTH_PASS"
+echo "Obfs      $OBFS_PASS"
 echo ""
 echo "$URI"
 
 if [ "$CERT_MODE" = "2" ]; then
   echo ""
-  echo "ca certificate  →  save as hysteria-ca.crt and import on client"
+  echo "CA Certificate — save as hysteria-ca.crt and import on client:"
   echo ""
   cat /etc/hysteria/ca.crt
   echo ""
-  echo "windows  win+r → certmgr.msc → trusted root certification authorities"
-  echo "         right click → all tasks → import → select hysteria-ca.crt"
+  echo "Windows: Win+R → certmgr.msc → Trusted Root Certification Authorities"
+  echo "         Right click → All Tasks → Import → Select hysteria-ca.crt"
 fi
 
 echo ""
-echo "h2 help  for management commands"
+echo "Run 'h2 help' for management commands."
 echo ""
