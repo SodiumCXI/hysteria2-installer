@@ -35,7 +35,6 @@ echo ""
 
 echo "Installing Hysteria2..."
 bash <(curl -fsSL https://get.hy2.sh/) 2>&1 | grep -v "^$" | sed '/Congratulation/q'
-echo ""
 
 echo "Generating certificates..."
 mkdir -p /etc/hysteria
@@ -73,7 +72,6 @@ chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
 chmod 600 /etc/hysteria/server.key
 chmod 644 /etc/hysteria/server.crt
 
-echo ""
 echo "Writing config..."
 cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
@@ -109,7 +107,6 @@ STATE
 chmod 600 "$STATE_FILE"
 echo "Done. Config: $CONFIG_FILE"
 
-echo ""
 echo "Configuring firewall..."
 if command -v ufw &>/dev/null; then
   ufw allow "${PORT}/udp" >/dev/null 2>&1
@@ -119,7 +116,6 @@ else
   echo "Warning: ufw not found. Open port ${PORT}/udp manually."
 fi
 
-echo ""
 echo "Starting service..."
 systemctl enable hysteria-server >/dev/null 2>&1
 systemctl restart hysteria-server
@@ -128,14 +124,14 @@ systemctl is-active --quiet hysteria-server \
   || die "Service failed. Check: journalctl -u hysteria-server -n 50"
 echo "Done. Hysteria2 is running."
 
-echo ""
 echo "Installing h2..."
 curl -fsSL "https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2" \
   -o "$MANAGER_PATH" || die "Failed to download h2 from GitHub"
 chmod +x "$MANAGER_PATH"
 echo "Done. h2 installed to $MANAGER_PATH"
 
-URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}"
+SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
+URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}"
 [ "$CERT_MODE" != "2" ] && URI="${URI}&insecure=1"
 
 echo ""

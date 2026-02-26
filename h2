@@ -101,21 +101,15 @@ _print_ca() {
     echo ""
     cat /etc/hysteria/ca.crt
     echo ""
-    echo "Windows: Win+R → certmgr.msc → Trusted Root Certification Authorities"
-    echo "         Right click → All Tasks → Import → Select hysteria-ca.crt"
   fi
 }
 
 cmd_help() {
-  echo ""
-  echo "h2 — Hysteria2 Management"
-  echo ""
   echo "  status     Service status"
   echo "  key        Connection URI"
   echo "  modify     Change settings"
   echo "  uninstall  Remove everything"
   echo "  help       This message"
-  echo ""
 }
 
 cmd_status() {
@@ -144,9 +138,7 @@ cmd_key() {
 }
 
 cmd_modify() {
-  echo ""
   echo "Leave blank to keep current, 'random' to regenerate password."
-  echo ""
 
   read -rp "Port [${PORT}]: " _in; [ -n "$_in" ] && PORT="$_in"
   read -rp "Auth password [${AUTH_PASS}]: " _in
@@ -178,7 +170,6 @@ cmd_modify() {
     echo "Done."
   fi
 
-  echo ""
   echo "Applying changes..."
   _write_config
   _write_state
@@ -194,7 +185,6 @@ cmd_modify() {
 cmd_uninstall() {
   read -rp "Remove Hysteria2 and all data? [y/n]: " _in
   [ "${_in,,}" != "y" ] && { echo "Aborted."; exit 0; }
-  echo ""
 
   echo "Stopping service..."
   systemctl stop hysteria-server 2>/dev/null || true
