@@ -45,6 +45,7 @@ bash <(curl -fsSL https://get.hy2.sh/) >/dev/null 2>&1
 echo "        done: $(hysteria version 2>/dev/null | head -1)"
 
 echo "[ 2/5 ] generating certificates..."
+
 mkdir -p /etc/hysteria
 
 if [ "$CERT_MODE" = "2" ]; then
@@ -131,8 +132,8 @@ systemctl is-active --quiet hysteria-server \
   || die "service failed — check: journalctl -u hysteria-server -n 50"
 echo "        done: hysteria-server running"
 
-cp "$(dirname "$0")/h2" "$MANAGER_PATH" 2>/dev/null \
-  || die "h2 not found next to install.sh — place both files in the same directory"
+curl -fsSL "https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2" \
+  -o "$MANAGER_PATH" || die "failed to download h2 from github"
 chmod +x "$MANAGER_PATH"
 
 URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}"
