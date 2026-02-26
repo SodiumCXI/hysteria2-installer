@@ -1,5 +1,4 @@
 #!/bin/bash
-
 set -euo pipefail
 
 [ "$EUID" -ne 0 ] && { echo "error: run as root"; exit 1; }
@@ -20,19 +19,19 @@ _build_uri() {
 }
 
 _write_state() {
-  cat > "$STATE_FILE" <<EOF
+  cat > "$STATE_FILE" <<STATE
 SERVER_IP="${SERVER_IP}"
 PORT="${PORT}"
 AUTH_PASS="${AUTH_PASS}"
 OBFS_PASS="${OBFS_PASS}"
 MASQ_URL="${MASQ_URL}"
 CERT_MODE="${CERT_MODE}"
-EOF
+STATE
   chmod 600 "$STATE_FILE"
 }
 
 _write_config() {
-  cat > "$CONFIG_FILE" <<EOF
+  cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
 
 tls:
@@ -53,20 +52,20 @@ obfs:
   type: salamander
   salamander:
     password: ${OBFS_PASS}
-EOF
+CONF
 }
 
 _restart() {
   systemctl restart hysteria-server
   sleep 1
   systemctl is-active --quiet hysteria-server \
-    || die "service failed after restart — check: journalctl -u hysteria-server -n 50"
+    || die "service failed  →  journalctl -u hysteria-server -n 50"
 }
 
 _regen_certs() {
   local mode="$1"
   if [ "$mode" = "2" ]; then
-    read -rp "ca name              [MyVPN-CA]: " _in; local CA_NAME="${_in:-MyVPN-CA}"
+    read -rp "ca name [MyVPN-CA]: " _in; local CA_NAME="${_in:-MyVPN-CA}"
     openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
     openssl req -x509 -new -nodes \
       -key /etc/hysteria/ca.key -sha256 -days 36500 \
@@ -97,166 +96,125 @@ _regen_certs() {
 _print_ca() {
   if [ "${CERT_MODE}" = "2" ] && [ -f /etc/hysteria/ca.crt ]; then
     echo ""
-    echo "ca certificate (save as hysteria-ca.crt and import on client):"
-    echo "───────────────────────────────────────────────────────"
-    cat /etc/hysteria/ca.crt
-    echo "───────────────────────────────────────────────────────"
+    echo "ca certificate  →  save as hysteria-ca.crt and import on client"
     echo ""
-    echo "windows: win+r → certmgr.msc → trusted root certification authorities"
-    echo "         → right click → all tasks → import → select hysteria-ca.crt"
+    cat /etc/hysteria/ca.crt
+    echo ""
+    echo "windows  win+r → certmgr.msc → trusted root certification authorities"
+    echo "         right click → all tasks → import → select hysteria-ca.crt"
   fi
 }
 
 cmd_help() {
   echo ""
-  echo "h2 — hysteria2 management tool"
+  echo "h2  hysteria2 management"
   echo ""
-  echo "usage: h2 <command>"
-  echo ""
-  echo "  status     show service status and recent logs"
-  echo "  key        print connection uri and ca cert if applicable"
-  echo "  modify     change settings interactively"
-  echo "  uninstall  remove hysteria2 and h2 completely"
-  echo "  help       show this message"
+  echo "  status     service status"
+  echo "  key        connection uri"
+  echo "  modify     change settings"
+  echo "  uninstall  remove everything"
+  echo "  help       this message"
   echo ""
 }
 
 cmd_status() {
-  local active up_since enabled
+  local active enabled up_since
   active=$(systemctl is-active hysteria-server 2>/dev/null || echo "inactive")
   enabled=$(systemctl is-enabled hysteria-server 2>/dev/null || echo "disabled")
   up_since=$(systemctl show hysteria-server --property=ActiveEnterTimestamp \
     | cut -d= -f2 2>/dev/null || echo "n/a")
 
   echo ""
-  echo "hysteria2 status"
-  echo "────────────────"
-  printf "  %-16s %s\n" "service:"   "$active"
-  printf "  %-16s %s\n" "autostart:" "$enabled"
-  printf "  %-16s %s\n" "since:"     "${up_since:-n/a}"
-  printf "  %-16s %s\n" "ip:"        "${SERVER_IP}"
-  printf "  %-16s %s\n" "port:"      "${PORT}"
-  printf "  %-16s %s\n" "masquerade:" "${MASQ_URL}"
-  printf "  %-16s %s\n" "cert mode:" "$([ "${CERT_MODE}" = "2" ] && echo 'ca' || echo 'simple')"
-  echo ""
-  echo "  recent log:"
-  journalctl -u hysteria-server -n 8 --no-pager 2>/dev/null \
-    | sed 's/^/    /' || echo "    (no logs)"
+  echo "status    $active"
+  echo "autostart $enabled"
+  echo "since     ${up_since:-n/a}"
+  echo "ip        $SERVER_IP"
+  echo "port      $PORT"
+  echo "cert      $([ "${CERT_MODE}" = "2" ] && echo 'ca' || echo 'simple')"
+  echo "masq      $MASQ_URL"
   echo ""
 }
 
 cmd_key() {
   echo ""
-  echo "uri:"
-  echo "───────────────────────────────────────────────────────"
   _build_uri
-  echo "───────────────────────────────────────────────────────"
   _print_ca
   echo ""
 }
 
 cmd_modify() {
   echo ""
-  echo "hysteria2 modify"
-  echo "────────────────"
-  echo "leave blank to keep current, type 'random' to regenerate password"
+  echo "leave blank to keep current, 'random' to regenerate password"
   echo ""
 
-  read -rp "server ip/hostname   [${SERVER_IP}]: " _in
-  [ -n "$_in" ] && SERVER_IP="$_in"
-
-  read -rp "port                 [${PORT}]: " _in
+  read -rp "port           [${PORT}]: " _in
   [ -n "$_in" ] && PORT="$_in"
 
-  read -rp "auth password        [${AUTH_PASS}]: " _in
+  read -rp "auth password  [${AUTH_PASS}]: " _in
   if   [ "$_in" = "random" ]; then AUTH_PASS=$(rand 16)
   elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
 
-  read -rp "obfs password        [${OBFS_PASS}]: " _in
+  read -rp "obfs password  [${OBFS_PASS}]: " _in
   if   [ "$_in" = "random" ]; then OBFS_PASS=$(rand 16)
   elif [ -n "$_in" ];         then OBFS_PASS="$_in"; fi
 
-  read -rp "masquerade url       [${MASQ_URL}]: " _in
+  read -rp "masquerade url [${MASQ_URL}]: " _in
   [ -n "$_in" ] && MASQ_URL="$_in"
 
   echo ""
-  echo "regenerate certificates?"
-  echo "  1) no"
-  echo "  2) simple — self-signed, insecure=1"
-  echo "  3) ca     — CA-signed, no insecure"
+  echo "certificates"
+  echo "  1  keep current"
+  echo "  2  simple — self-signed, insecure=1"
+  echo "  3  ca     — CA-signed, no insecure"
   echo ""
-  read -rp "choose [1/2/3] [1]: " _in
+  read -rp "choose [1/2/3]: " _in
   local cert_choice="${_in:-1}"
 
   if [ "$cert_choice" = "2" ]; then
     CERT_MODE="1"
     echo ""
-    echo "regenerating certificates..."
+    echo "regenerating..."
     _regen_certs "1"
-    echo "done"
   elif [ "$cert_choice" = "3" ]; then
     CERT_MODE="2"
     echo ""
-    echo "regenerating certificates..."
+    echo "regenerating..."
     _regen_certs "2"
-    echo "done"
   fi
 
   echo ""
-  echo "applying changes..."
+  echo "applying..."
   _write_config
   _write_state
   _restart
-  echo "done"
-
   echo ""
-  echo "uri:"
-  echo "───────────────────────────────────────────────────────"
   _build_uri
-  echo "───────────────────────────────────────────────────────"
   [ "$cert_choice" = "3" ] && _print_ca
   echo ""
 }
 
 cmd_uninstall() {
   echo ""
-  echo "hysteria2 uninstall"
-  echo "───────────────────"
-  read -rp "remove hysteria2, all config and certificates? [y/N]: " _in
+  read -rp "remove hysteria2 and all data? [y/N]: " _in
   [ "${_in,,}" != "y" ] && { echo "aborted"; exit 0; }
   echo ""
 
-  echo "stopping service..."
   systemctl stop hysteria-server    2>/dev/null || true
   systemctl disable hysteria-server 2>/dev/null || true
-
-  echo "removing hysteria2 binary and service..."
   bash <(curl -fsSL https://get.hy2.sh/) --remove >/dev/null 2>&1 || true
-
-  echo "removing systemd symlinks..."
   rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server.service
   rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server@*.service
   systemctl daemon-reload
-
-  echo "removing hysteria user..."
-  if id "hysteria" &>/dev/null; then
-    userdel -r hysteria 2>/dev/null || userdel hysteria 2>/dev/null || true
-  fi
-
-  echo "removing config and certificates..."
+  id "hysteria" &>/dev/null && userdel -r hysteria 2>/dev/null || true
   rm -rf /etc/hysteria
 
   if command -v ufw &>/dev/null; then
-    echo "removing firewall rules..."
     ufw delete allow "${PORT}/udp" >/dev/null 2>&1 || true
     ufw delete allow "${PORT}/tcp" >/dev/null 2>&1 || true
   fi
 
-  echo "removing h2..."
   rm -f /usr/local/bin/h2
-
-  echo ""
-  echo "hysteria2 removed"
+  echo "removed"
   echo ""
 }
 
@@ -266,9 +224,5 @@ case "${1:-help}" in
   modify)    cmd_modify    ;;
   uninstall) cmd_uninstall ;;
   help)      cmd_help      ;;
-  *)
-    echo "unknown command: ${1}"
-    cmd_help
-    exit 1
-    ;;
+  *) echo "unknown command: ${1}"; cmd_help; exit 1 ;;
 esac
