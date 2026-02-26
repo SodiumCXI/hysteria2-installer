@@ -7,7 +7,7 @@ set -euo pipefail
 STATE_FILE="/etc/hysteria/.state"
 CONFIG_FILE="/etc/hysteria/config.yaml"
 
-rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
 die()  { echo "error: $*"; exit 1; }
 
 [ ! -f "$STATE_FILE" ] && die "hysteria2 is not installed"

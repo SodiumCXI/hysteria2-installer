@@ -8,7 +8,7 @@ MANAGER_PATH="/usr/local/bin/h2"
 STATE_FILE="/etc/hysteria/.state"
 CONFIG_FILE="/etc/hysteria/config.yaml"
 
-rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; }
+rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
 die()  { echo "error: $*"; exit 1; }
 
 if command -v hysteria &>/dev/null && [ -f "$CONFIG_FILE" ]; then
@@ -45,8 +45,9 @@ bash <(curl -fsSL https://get.hy2.sh/) >/dev/null 2>&1
 echo "        done: $(hysteria version 2>/dev/null | head -1)"
 
 echo "[ 2/5 ] generating certificates..."
-
 mkdir -p /etc/hysteria
+chown hysteria:hysteria /etc/hysteria
+chmod 750 /etc/hysteria
 
 if [ "$CERT_MODE" = "2" ]; then
   read -rp "ca name              [MyVPN-CA]: " _in; CA_NAME="${_in:-MyVPN-CA}"
