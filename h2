@@ -148,15 +148,15 @@ cmd_modify() {
   echo "Leave blank to keep current, 'random' to regenerate password."
   echo ""
 
-  read -rp "Port [${PORT}]: "_in; [ -n "$_in" ] && PORT="$_in"
-  read -rp "Auth password [${AUTH_PASS}]: "_in
+  read -rp "Port [${PORT}]: " _in; [ -n "$_in" ] && PORT="$_in"
+  read -rp "Auth password [${AUTH_PASS}]: " _in
   if   [ "$_in" = "random" ]; then AUTH_PASS=$(rand 16)
   elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
-  read -rp "Obfs password [${OBFS_PASS}]: "_in
+  read -rp "Obfs password [${OBFS_PASS}]: " _in
   if   [ "$_in" = "random" ]; then OBFS_PASS=$(rand 16)
   elif [ -n "$_in" ];         then OBFS_PASS="$_in"; fi
   local masq_display="${MASQ_URL#https://}"; masq_display="${masq_display%/}"
-  read -rp "SNI [${masq_display}]: "_in
+  read -rp "SNI [${masq_display}]: " _in
   if [ -n "$_in" ]; then MASQ_URL="https://${_in}/"; fi
 
   echo "Certificates:"
