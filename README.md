@@ -1,7 +1,5 @@
 # hysteria2-installer
 
-One-command [Hysteria2](https://v2.hysteria.network/) installer with interactive setup and a built-in management tool.
-
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/install.sh -o install.sh && bash install.sh
 ```
