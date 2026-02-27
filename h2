@@ -101,7 +101,7 @@ _regen_certs() {
 _print_ca() {
   if [ "${CERT_MODE}" = "2" ] && [ -f /etc/hysteria/ca.crt ]; then
     echo ""
-    echo "CA Certificate — save as hysteria-ca.crt and import on client:"
+    echo "CA Certificate — save as ca.crt and import on client:"
     echo ""
     cat /etc/hysteria/ca.crt
     echo ""

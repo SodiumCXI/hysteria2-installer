@@ -144,7 +144,7 @@ echo "$URI"
 
 if [ "$CERT_MODE" = "2" ]; then
   echo ""
-  echo "CA Certificate — save as hysteria-ca.crt and import on client:"
+  echo "CA Certificate — save as ca.crt and import on client:"
   echo ""
   cat /etc/hysteria/ca.crt
 fi
