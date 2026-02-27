@@ -128,6 +128,7 @@ cmd_status() {
   echo "Port       $PORT"
   echo "Cert       $([ "${CERT_MODE}" = "2" ] && echo 'CA-signed' || echo 'Self-signed')"
   echo "SNI        $(echo "$MASQ_URL" | sed 's|https://||;s|/||g')"
+  echo "Key name   $KEY_NAME"
   echo ""
 }
 

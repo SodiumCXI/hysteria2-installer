@@ -138,11 +138,6 @@ URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&ob
 URI="${URI}#${KEY_NAME}"
 
 echo ""
-echo "IP    $SERVER_IP"
-echo "Port  $PORT"
-echo "Auth  $AUTH_PASS"
-echo "Obfs  $OBFS_PASS"
-echo ""
 echo "$URI"
 
 if [ "$CERT_MODE" = "2" ]; then
