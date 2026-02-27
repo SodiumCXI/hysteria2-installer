@@ -120,7 +120,6 @@ cmd_status() {
   up_since=$(systemctl show hysteria-server --property=ActiveEnterTimestamp \
     | cut -d= -f2 2>/dev/null || echo "n/a")
 
-  echo ""
   echo "Status     $active"
   echo "Autostart  $enabled"
   echo "Since      ${up_since:-n/a}"
@@ -129,7 +128,6 @@ cmd_status() {
   echo "Cert       $([ "${CERT_MODE}" = "2" ] && echo 'CA-signed' || echo 'Self-signed')"
   echo "SNI        $(echo "$MASQ_URL" | sed 's|https://||;s|/||g')"
   echo "Key name   $KEY_NAME"
-  echo ""
 }
 
 cmd_key() {
