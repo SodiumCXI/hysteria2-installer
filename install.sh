@@ -43,6 +43,7 @@ chown hysteria:hysteria /etc/hysteria
 chmod 750 /etc/hysteria
 
 if [ "$CERT_MODE" = "2" ]; then
+  SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
   read -rp "CA name [Hysteria2-CA]: " _in; CA_NAME="${_in:-Hysteria2-CA}"
   openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
   openssl req -x509 -new -nodes \
@@ -53,19 +54,20 @@ if [ "$CERT_MODE" = "2" ]; then
   openssl req -new \
     -key /etc/hysteria/server.key \
     -out /etc/hysteria/server.csr \
-    -subj "/CN=${SERVER_IP}" 2>/dev/null
+    -subj "/CN=${SNI}" 2>/dev/null
   openssl x509 -req \
     -in /etc/hysteria/server.csr \
     -CA /etc/hysteria/ca.crt -CAkey /etc/hysteria/ca.key \
     -CAcreateserial -out /etc/hysteria/server.crt \
-    -days 36500 -sha256 2>/dev/null
+    -days 36500 -sha256 \
+    -extfile <(echo "subjectAltName=DNS:${SNI}") 2>/dev/null
   rm -f /etc/hysteria/server.csr
   echo "Done. Mode: CA-signed"
 else
   openssl req -x509 -nodes -newkey rsa:2048 \
     -keyout /etc/hysteria/server.key \
     -out /etc/hysteria/server.crt \
-    -days 36500 -subj "/CN=localhost" 2>/dev/null
+    -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
   echo "Done. Mode: Self-signed"
 fi
 

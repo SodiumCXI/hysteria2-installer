@@ -13,8 +13,8 @@ die()  { echo "Error: $*"; exit 1; }
 source "$STATE_FILE"
 
 _build_uri() {
-  local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}"
+  local SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
+  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?SNI=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}"
   [ "${CERT_MODE}" != "2" ] && uri="${uri}&insecure=1"
   uri="${uri}#${KEY_NAME}"
   echo "$uri"
@@ -28,6 +28,7 @@ AUTH_PASS="${AUTH_PASS}"
 OBFS_PASS="${OBFS_PASS}"
 MASQ_URL="${MASQ_URL}"
 CERT_MODE="${CERT_MODE}"
+KEY_NAME="${KEY_NAME}"
 STATE
   chmod 600 "$STATE_FILE"
 }
@@ -67,28 +68,30 @@ _restart() {
 _regen_certs() {
   local mode="$1"
   if [ "$mode" = "2" ]; then
-    read -rp "CA name [Hysteria2-CA]: " _in; local CA_NAME="${_in:-Hysteria2-CA}"
-    openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
-    openssl req -x509 -new -nodes \
+	local SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
+	read -rp "CA name [Hysteria2-CA]: " _in; local CA_NAME="${_in:-Hysteria2-CA}"
+	openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
+	openssl req -x509 -new -nodes \
       -key /etc/hysteria/ca.key -sha256 -days 36500 \
       -out /etc/hysteria/ca.crt \
       -subj "/CN=${CA_NAME}" 2>/dev/null
-    openssl genrsa -out /etc/hysteria/server.key 2048 2>/dev/null
-    openssl req -new \
+	openssl genrsa -out /etc/hysteria/server.key 2048 2>/dev/null
+	openssl req -new \
       -key /etc/hysteria/server.key \
       -out /etc/hysteria/server.csr \
-      -subj "/CN=${SERVER_IP}" 2>/dev/null
-    openssl x509 -req \
+      -subj "/CN=${SNI}" 2>/dev/null
+	openssl x509 -req \
       -in /etc/hysteria/server.csr \
       -CA /etc/hysteria/ca.crt -CAkey /etc/hysteria/ca.key \
       -CAcreateserial -out /etc/hysteria/server.crt \
-      -days 36500 -sha256 2>/dev/null
-    rm -f /etc/hysteria/server.csr
+      -days 36500 -sha256 \
+      -extfile <(echo "subjectAltName=DNS:${SNI}") 2>/dev/null
+	rm -f /etc/hysteria/server.csr
   else
     openssl req -x509 -nodes -newkey rsa:2048 \
       -keyout /etc/hysteria/server.key \
       -out /etc/hysteria/server.crt \
-      -days 36500 -subj "/CN=localhost" 2>/dev/null
+      -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
   fi
   chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
   chmod 600 /etc/hysteria/server.key
@@ -102,6 +105,8 @@ _print_ca() {
     echo ""
     cat /etc/hysteria/ca.crt
     echo ""
+  else 
+	echo ""
   fi
 }
 
@@ -134,11 +139,12 @@ cmd_key() {
   echo ""
   _build_uri
   _print_ca
-  echo ""
 }
 
 cmd_modify() {
+  echo ""
   echo "Leave blank to keep current, 'random' to regenerate password."
+  echo ""
 
   read -rp "Port [${PORT}]: " _in; [ -n "$_in" ] && PORT="$_in"
   read -rp "Auth password [${AUTH_PASS}]: " _in
