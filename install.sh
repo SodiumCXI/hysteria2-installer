@@ -26,6 +26,7 @@ read -rp "Port [443]: " _in; PORT="${_in:-443}"
 read -rp "Auth password [random]: " _in; AUTH_PASS="${_in:-$(rand 16)}"
 read -rp "Obfs password [random]: " _in; OBFS_PASS="${_in:-$(rand 16)}"
 read -rp "SNI [google.com]: " _in; MASQ_URL="https://${_in:-google.com}/"
+read -rp "Key name [Hysteria2]: " _in; KEY_NAME="${_in:-Hysteria2}"
 
 echo "Certificate mode:"
 echo "  1 Simple — self-signed, insecure=1 in URI"
@@ -42,7 +43,7 @@ chown hysteria:hysteria /etc/hysteria
 chmod 750 /etc/hysteria
 
 if [ "$CERT_MODE" = "2" ]; then
-  read -rp "CA name [MyVPN-CA]: " _in; CA_NAME="${_in:-MyVPN-CA}"
+  read -rp "CA name [Hysteria2-CA]: " _in; CA_NAME="${_in:-Hysteria2-CA}"
   openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
   openssl req -x509 -new -nodes \
     -key /etc/hysteria/ca.key -sha256 -days 36500 \
@@ -103,6 +104,7 @@ AUTH_PASS="${AUTH_PASS}"
 OBFS_PASS="${OBFS_PASS}"
 MASQ_URL="${MASQ_URL}"
 CERT_MODE="${CERT_MODE}"
+KEY_NAME="${KEY_NAME}"
 STATE
 chmod 600 "$STATE_FILE"
 echo "Done. Config: $CONFIG_FILE"
@@ -133,6 +135,7 @@ echo "Done. h2 installed to $MANAGER_PATH"
 SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
 URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}"
 [ "$CERT_MODE" != "2" ] && URI="${URI}&insecure=1"
+URI="${URI}#${KEY_NAME}"
 
 echo ""
 echo "IP    $SERVER_IP"

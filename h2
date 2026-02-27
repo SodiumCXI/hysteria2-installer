@@ -16,6 +16,7 @@ _build_uri() {
   local sni="${MASQ_URL#https://}"; sni="${sni%/}"
   local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}"
   [ "${CERT_MODE}" != "2" ] && uri="${uri}&insecure=1"
+  uri="${uri}#${KEY_NAME}"
   echo "$uri"
 }
 
@@ -66,7 +67,7 @@ _restart() {
 _regen_certs() {
   local mode="$1"
   if [ "$mode" = "2" ]; then
-    read -rp "CA name [MyVPN-CA]: " _in; local CA_NAME="${_in:-MyVPN-CA}"
+    read -rp "CA name [Hysteria2-CA]: " _in; local CA_NAME="${_in:-Hysteria2-CA}"
     openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
     openssl req -x509 -new -nodes \
       -key /etc/hysteria/ca.key -sha256 -days 36500 \
@@ -150,6 +151,7 @@ cmd_modify() {
   local masq_display="${MASQ_URL#https://}"; masq_display="${masq_display%/}"
   read -rp "SNI [${masq_display}]: " _in
   if [ -n "$_in" ]; then MASQ_URL="https://${_in}/"; fi
+  read -rp "Key name [${KEY_NAME}]: " _in; [ -n "$_in" ] && KEY_NAME="$_in"
 
   echo "Certificates:"
   echo "  1 Keep current"
