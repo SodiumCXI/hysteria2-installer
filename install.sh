@@ -11,7 +11,7 @@ rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
 die()  { echo "Error: $*"; exit 1; }
 
 if command -v hysteria &>/dev/null && [ -f "$CONFIG_FILE" ]; then
-  echo "Hysteria2 is already installed. Use 'h2 modify' or 'h2 uninstall'."
+  echo "Hysteria2 is already installed. Use 'h2 help'."
   exit 0
 fi
 
