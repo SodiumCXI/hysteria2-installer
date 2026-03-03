@@ -85,6 +85,10 @@ tls:
   cert: /etc/hysteria/server.crt
   key: /etc/hysteria/server.key
 
+bandwidth:
+  up: 1 gbps
+  down: 1 gbps
+
 auth:
   type: password
   password: ${AUTH_PASS}
