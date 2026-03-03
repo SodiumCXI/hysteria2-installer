@@ -10,7 +10,7 @@ CONFIG_FILE="/etc/hysteria/config.yaml"
 rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
 die()  { echo "Error: $*"; exit 1; }
 
-if command -v hysteria &>/dev/null && [ -f "$CONFIG_FILE" ]; then
+if [ -f "/usr/local/bin/h2" ]; then
   echo "Hysteria2 is already installed. Use 'h2 help'."
   exit 0
 fi
@@ -33,6 +33,8 @@ echo "  1 Simple — self-signed, insecure=1 in URI"
 echo "  2 CA — own CA, import cert on client, no insecure"
 read -rp "Choose [1/2]: " _in; CERT_MODE="${_in:-1}"
 echo ""
+
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 echo "Installing Hysteria2..."
 bash <(curl -fsSL https://get.hy2.sh/) 2>&1 | grep -v "^$" | sed '/Congratulation/q'
