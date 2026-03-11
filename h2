@@ -16,13 +16,13 @@ source "$STATE_FILE"
 
 _build_uri_single() {
   local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
+  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${sni}&insecure=1#${KEY_NAME}"
 }
 
 _build_uri_user() {
   local user="$1" pass="$2"
   local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  echo "hysteria2://${user}:${pass}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
+  echo "hysteria2://${user}:${pass}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${sni}&insecure=1#${KEY_NAME}"
 }
 
 _write_state() {
@@ -45,6 +45,7 @@ _write_config() {
     while IFS=: read -r u p; do
       userpass_block="${userpass_block}    ${u}: ${p}"$'\n'
     done < "$USERS_FILE"
+      userpass_block="${userpass_block%$'\n'}"
 
     cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
@@ -61,6 +62,7 @@ auth:
   type: userpass
   userpass:
 ${userpass_block}
+
 masquerade:
   type: proxy
   proxy:
@@ -168,14 +170,12 @@ cmd_modify() {
 
   read -rp "Key name [${KEY_NAME}]: " _in; [ -n "$_in" ] && KEY_NAME="$_in"
 
-  echo ""
   echo "Auth mode:"
   echo "  1  Single password"
   echo "  2  Users"
-  echo ""
-  local mode_display; [ "$AUTH_MODE" = "2" ] && mode_display="users" || mode_display="single"
-  read -rp "Auth mode [${mode_display}]: " _in
+  read -rp "Choose [1/2]: " _in
   local new_mode="${_in:-$AUTH_MODE}"
+  [ "$new_mode" != "1" ] && [ "$new_mode" != "2" ] && new_mode="$AUTH_MODE"
 
   if [ "$new_mode" != "$AUTH_MODE" ]; then
     AUTH_MODE="$new_mode"
@@ -195,13 +195,11 @@ cmd_modify() {
     elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
   fi
 
-  echo ""
   echo "Applying changes..."
   _write_config
   _write_state
   _restart
   echo "Done."
-  echo ""
   cmd_key
 }
 
@@ -234,11 +232,12 @@ cmd_userdel() {
 cmd_userlist() {
   [ ! -f "$USERS_FILE" ] && die "Users file not found"
   echo ""
+  local i=1
   while IFS=: read -r u p; do
-    echo "[$u]"
-    _build_uri_user "$u" "$p"
-    echo ""
+    echo "$i $u"
+    i=$((i+1))
   done < "$USERS_FILE"
+  echo ""
 }
 
 cmd_uninstall() {

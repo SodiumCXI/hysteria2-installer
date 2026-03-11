@@ -21,7 +21,7 @@ SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 h
 [ -z "$SERVER_IP" ] && die "Could not detect external IP"
 
 echo ""
-echo "Hysteria2 Setup"
+echo "Leave blank to keep current"
 echo ""
 
 read -rp "Port [443]: " _in; PORT="${_in:-443}"
@@ -30,11 +30,9 @@ read -rp "Key name [Hysteria2]: " _in; KEY_NAME="${_in:-Hysteria2}"
 
 OBFS_PASS=$(rand 16)
 
-echo ""
 echo "Auth mode:"
 echo "  1  Single password"
 echo "  2  Users"
-echo ""
 read -rp "Choose [1/2]: " _in; AUTH_MODE="${_in:-1}"
 
 if [ "$AUTH_MODE" = "1" ]; then
@@ -168,9 +166,9 @@ echo ""
 
 if [ "$AUTH_MODE" = "2" ]; then
   echo "[$FIRST_USER]"
-  echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
+  echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}"
 else
-  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
+  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}"
 fi
 
 echo ""
