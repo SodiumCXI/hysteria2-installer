@@ -25,9 +25,10 @@ echo "Hysteria2 Setup"
 echo ""
 
 read -rp "Port [443]: " _in; PORT="${_in:-443}"
-read -rp "Obfs password [random]: " _in; OBFS_PASS="${_in:-$(rand 16)}"
 read -rp "SNI [google.com]: " _in; MASQ_URL="https://${_in:-google.com}/"
 read -rp "Key name [Hysteria2]: " _in; KEY_NAME="${_in:-Hysteria2}"
+
+OBFS_PASS=$(rand 16)
 
 echo ""
 echo "Auth mode:"
@@ -37,7 +38,7 @@ echo ""
 read -rp "Choose [1/2]: " _in; AUTH_MODE="${_in:-1}"
 
 if [ "$AUTH_MODE" = "1" ]; then
-  read -rp "Auth password [random]: " _in; AUTH_PASS="${_in:-$(rand 16)}"
+  AUTH_PASS=$(rand 16)
 else
   AUTH_PASS=""
   read -rp "First username: " _in; FIRST_USER="${_in:-user}"
@@ -166,7 +167,7 @@ SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
 echo ""
 
 if [ "$AUTH_MODE" = "2" ]; then
-  echo "${FIRST_USER}"
+  echo "$FIRST_USER"
   echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
 else
   echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"

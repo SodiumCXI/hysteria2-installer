@@ -40,6 +40,7 @@ STATE
 
 _write_config() {
   if [ "$AUTH_MODE" = "2" ]; then
+    [ ! -f "$USERS_FILE" ] && die "Users file not found"
     local userpass_block=""
     while IFS=: read -r u p; do
       userpass_block="${userpass_block}    ${u}: ${p}"$'\n'
@@ -60,7 +61,6 @@ auth:
   type: userpass
   userpass:
 ${userpass_block}
-
 masquerade:
   type: proxy
   proxy:
@@ -110,16 +110,16 @@ _restart() {
 }
 
 cmd_help() {
-  echo "  status     Service status"
-  echo "  key        Connection URI"
-  echo "  modify     Change settings"
+  echo "  status      Service status"
+  echo "  key         Connection URI"
+  echo "  modify      Change settings"
   if [ "$AUTH_MODE" = "2" ]; then
-    echo "  useradd    Add user"
-    echo "  userdel    Delete user"
-    echo "  userlist   List users"
+    echo "  useradd     Add user"
+    echo "  userdel     Delete user"
+    echo "  userlist    List users"
   fi
-  echo "  uninstall  Remove everything"
-  echo "  help       This message"
+  echo "  uninstall   Remove everything"
+  echo "  help        This message"
 }
 
 cmd_status() {
@@ -157,20 +157,43 @@ cmd_modify() {
   echo ""
 
   read -rp "Port [${PORT}]: " _in; [ -n "$_in" ] && PORT="$_in"
-  read -rp "Obfs password [${OBFS_PASS}]: " _in
-  if   [ "$_in" = "random" ]; then OBFS_PASS=$(rand 16)
-  elif [ -n "$_in" ];         then OBFS_PASS="$_in"; fi
+
+  read -rp "Obfs password [random]: " _in
+  if   [ "$_in" = "random" ] || [ -n "$_in" ]; then OBFS_PASS=$(rand 16)
+  fi
+
   local masq_display="${MASQ_URL#https://}"; masq_display="${masq_display%/}"
   read -rp "SNI [${masq_display}]: " _in
   if [ -n "$_in" ]; then MASQ_URL="https://${_in}/"; fi
+
   read -rp "Key name [${KEY_NAME}]: " _in; [ -n "$_in" ] && KEY_NAME="$_in"
 
-  if [ "$AUTH_MODE" = "1" ]; then
-    read -rp "Auth password [${AUTH_PASS}]: " _in
-    if   [ "$_in" = "random" ]; then AUTH_PASS=$(rand 16)
-    elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
+  echo ""
+  echo "Auth mode:"
+  echo "  1  Single password"
+  echo "  2  Users"
+  echo ""
+  read -rp "Auth mode [${AUTH_MODE}]: " _in
+  local new_mode="${_in:-$AUTH_MODE}"
+
+  if [ "$new_mode" != "$AUTH_MODE" ]; then
+    AUTH_MODE="$new_mode"
+    if [ "$AUTH_MODE" = "2" ]; then
+      AUTH_PASS=""
+      read -rp "First username: " _in; local FIRST_USER="${_in:-user}"
+      local FIRST_PASS; FIRST_PASS=$(rand 16)
+      echo "${FIRST_USER}:${FIRST_PASS}" > "$USERS_FILE"
+      chmod 600 "$USERS_FILE"
+    else
+      AUTH_PASS=$(rand 16)
+      rm -f "$USERS_FILE"
+    fi
+  elif [ "$AUTH_MODE" = "1" ]; then
+    read -rp "Auth password [random]: " _in
+    if [ -n "$_in" ]; then AUTH_PASS="$_in"; else AUTH_PASS=$(rand 16); fi
   fi
 
+  echo ""
   echo "Applying changes..."
   _write_config
   _write_state
@@ -181,7 +204,6 @@ cmd_modify() {
 }
 
 cmd_useradd() {
-  [ "$AUTH_MODE" != "2" ] && die "Not in users mode"
   [ -z "${1:-}" ] && die "Usage: h2 useradd <username>"
   local user="$1"
   grep -q "^${user}:" "$USERS_FILE" 2>/dev/null && die "User '$user' already exists"
@@ -196,10 +218,11 @@ cmd_useradd() {
 }
 
 cmd_userdel() {
-  [ "$AUTH_MODE" != "2" ] && die "Not in users mode"
   [ -z "${1:-}" ] && die "Usage: h2 userdel <username>"
   local user="$1"
   grep -q "^${user}:" "$USERS_FILE" 2>/dev/null || die "User '$user' not found"
+  local count; count=$(wc -l < "$USERS_FILE")
+  [ "$count" -le 1 ] && die "Cannot delete the last user"
   sed -i "/^${user}:/d" "$USERS_FILE"
   _write_config
   _restart
@@ -207,7 +230,6 @@ cmd_userdel() {
 }
 
 cmd_userlist() {
-  [ "$AUTH_MODE" != "2" ] && die "Not in users mode"
   [ ! -f "$USERS_FILE" ] && die "Users file not found"
   echo ""
   while IFS=: read -r u p; do
@@ -265,13 +287,13 @@ cmd_uninstall() {
 }
 
 case "${1:-help}" in
-  status)    cmd_status           ;;
-  key)       cmd_key              ;;
-  modify)    cmd_modify           ;;
-  useradd)   [ "$AUTH_MODE" != "2" ] && { echo "Error: not in users mode"; exit 1; }; cmd_useradd "${2:-}" ;;
-  userdel)   [ "$AUTH_MODE" != "2" ] && { echo "Error: not in users mode"; exit 1; }; cmd_userdel "${2:-}" ;;
-  userlist)  [ "$AUTH_MODE" != "2" ] && { echo "Error: not in users mode"; exit 1; }; cmd_userlist ;;
-  uninstall) cmd_uninstall        ;;
-  help)      cmd_help             ;;
+  status)    cmd_status              ;;
+  key)       cmd_key                 ;;
+  modify)    cmd_modify              ;;
+  useradd)   [ "$AUTH_MODE" != "2" ] && die "Not in users mode"; cmd_useradd "${2:-}" ;;
+  userdel)   [ "$AUTH_MODE" != "2" ] && die "Not in users mode"; cmd_userdel "${2:-}" ;;
+  userlist)  [ "$AUTH_MODE" != "2" ] && die "Not in users mode"; cmd_userlist ;;
+  uninstall) cmd_uninstall           ;;
+  help)      cmd_help                ;;
   *) echo "Unknown command: ${1}"; cmd_help; exit 1 ;;
 esac
