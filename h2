@@ -124,7 +124,7 @@ cmd_help() {
 
 cmd_status() {
   local active enabled
-  active=$(systemctl is-active hysteria-server 2>/dev/null || echo "inactive")
+  active=$(systemctl is-active hysteria-server 2>/dev/null) || active="inactive"
   enabled=$(systemctl is-enabled hysteria-server 2>/dev/null || echo "disabled")
 
   echo "Status     $active"
@@ -141,7 +141,7 @@ cmd_key() {
   if [ "$AUTH_MODE" = "2" ]; then
     [ ! -f "$USERS_FILE" ] && die "Users file not found"
     while IFS=: read -r u p; do
-      echo "$u"
+      echo "[$u]"
       _build_uri_user "$u" "$p"
       echo ""
     done < "$USERS_FILE"
@@ -158,9 +158,9 @@ cmd_modify() {
 
   read -rp "Port [${PORT}]: " _in; [ -n "$_in" ] && PORT="$_in"
 
-  read -rp "Obfs password [random]: " _in
-  if   [ "$_in" = "random" ] || [ -n "$_in" ]; then OBFS_PASS=$(rand 16)
-  fi
+  read -rp "Obfs password [${OBFS_PASS}]: " _in
+  if   [ "$_in" = "random" ]; then OBFS_PASS=$(rand 16)
+  elif [ -n "$_in" ];         then OBFS_PASS="$_in"; fi
 
   local masq_display="${MASQ_URL#https://}"; masq_display="${masq_display%/}"
   read -rp "SNI [${masq_display}]: " _in
@@ -173,7 +173,8 @@ cmd_modify() {
   echo "  1  Single password"
   echo "  2  Users"
   echo ""
-  read -rp "Auth mode [${AUTH_MODE}]: " _in
+  local mode_display; [ "$AUTH_MODE" = "2" ] && mode_display="users" || mode_display="single"
+  read -rp "Auth mode [${mode_display}]: " _in
   local new_mode="${_in:-$AUTH_MODE}"
 
   if [ "$new_mode" != "$AUTH_MODE" ]; then
@@ -189,8 +190,9 @@ cmd_modify() {
       rm -f "$USERS_FILE"
     fi
   elif [ "$AUTH_MODE" = "1" ]; then
-    read -rp "Auth password [random]: " _in
-    if [ -n "$_in" ]; then AUTH_PASS="$_in"; else AUTH_PASS=$(rand 16); fi
+    read -rp "Auth password [${AUTH_PASS}]: " _in
+    if   [ "$_in" = "random" ]; then AUTH_PASS=$(rand 16)
+    elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
   fi
 
   echo ""
@@ -212,7 +214,7 @@ cmd_useradd() {
   _write_config
   _restart
   echo ""
-  echo "$user"
+  echo "[$user]"
   _build_uri_user "$user" "$pass"
   echo ""
 }
@@ -233,7 +235,7 @@ cmd_userlist() {
   [ ! -f "$USERS_FILE" ] && die "Users file not found"
   echo ""
   while IFS=: read -r u p; do
-    echo "$u"
+    echo "[$u]"
     _build_uri_user "$u" "$p"
     echo ""
   done < "$USERS_FILE"

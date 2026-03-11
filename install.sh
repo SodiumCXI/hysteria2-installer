@@ -167,7 +167,7 @@ SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
 echo ""
 
 if [ "$AUTH_MODE" = "2" ]; then
-  echo "$FIRST_USER"
+  echo "[$FIRST_USER]"
   echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
 else
   echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
