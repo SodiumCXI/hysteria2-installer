@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -euo pipefail
 
 [ "$EUID" -ne 0 ] && { echo "Error: run as root"; exit 1; }
@@ -27,11 +28,6 @@ read -rp "Auth password [random]: " _in; AUTH_PASS="${_in:-$(rand 16)}"
 read -rp "Obfs password [random]: " _in; OBFS_PASS="${_in:-$(rand 16)}"
 read -rp "SNI [google.com]: " _in; MASQ_URL="https://${_in:-google.com}/"
 read -rp "Key name [Hysteria2]: " _in; KEY_NAME="${_in:-Hysteria2}"
-
-echo "Certificate mode:"
-echo "  1 Simple — self-signed, insecure=1 in URI"
-echo "  2 CA — own CA, import cert on client, no insecure"
-read -rp "Choose [1/2]: " _in; CERT_MODE="${_in:-1}"
 echo ""
 
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
@@ -39,43 +35,20 @@ export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 echo "Installing Hysteria2..."
 bash <(curl -fsSL https://get.hy2.sh/) 2>&1 | grep -v "^$" | sed '/Congratulation/q'
 
-echo "Generating certificates..."
+echo "Generating certificate..."
 mkdir -p /etc/hysteria
 chown hysteria:hysteria /etc/hysteria
 chmod 750 /etc/hysteria
 
-if [ "$CERT_MODE" = "2" ]; then
-  SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
-  read -rp "CA name [Hysteria2-CA]: " _in; CA_NAME="${_in:-Hysteria2-CA}"
-  openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
-  openssl req -x509 -new -nodes \
-    -key /etc/hysteria/ca.key -sha256 -days 36500 \
-    -out /etc/hysteria/ca.crt \
-    -subj "/CN=${CA_NAME}" 2>/dev/null
-  openssl genrsa -out /etc/hysteria/server.key 2048 2>/dev/null
-  openssl req -new \
-    -key /etc/hysteria/server.key \
-    -out /etc/hysteria/server.csr \
-    -subj "/CN=${SNI}" 2>/dev/null
-  openssl x509 -req \
-    -in /etc/hysteria/server.csr \
-    -CA /etc/hysteria/ca.crt -CAkey /etc/hysteria/ca.key \
-    -CAcreateserial -out /etc/hysteria/server.crt \
-    -days 36500 -sha256 \
-    -extfile <(echo "subjectAltName=DNS:${SNI}") 2>/dev/null
-  rm -f /etc/hysteria/server.csr
-  echo "Done. Mode: CA-signed"
-else
-  openssl req -x509 -nodes -newkey rsa:2048 \
-    -keyout /etc/hysteria/server.key \
-    -out /etc/hysteria/server.crt \
-    -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
-  echo "Done. Mode: Self-signed"
-fi
+openssl req -x509 -nodes -newkey rsa:2048 \
+  -keyout /etc/hysteria/server.key \
+  -out /etc/hysteria/server.crt \
+  -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
 
 chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
 chmod 600 /etc/hysteria/server.key
 chmod 644 /etc/hysteria/server.crt
+echo "Done."
 
 echo "Writing config..."
 cat > "$CONFIG_FILE" <<CONF
@@ -111,7 +84,6 @@ PORT="${PORT}"
 AUTH_PASS="${AUTH_PASS}"
 OBFS_PASS="${OBFS_PASS}"
 MASQ_URL="${MASQ_URL}"
-CERT_MODE="${CERT_MODE}"
 KEY_NAME="${KEY_NAME}"
 STATE
 chmod 600 "$STATE_FILE"
@@ -141,25 +113,10 @@ chmod +x "$MANAGER_PATH"
 echo "Done. h2 installed to $MANAGER_PATH"
 
 SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
-URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}"
-if [ "$CERT_MODE" = "2" ]; then
-  PIN=$(openssl x509 -noout -fingerprint -sha256 -in /etc/hysteria/server.crt | cut -d= -f2)
-  URI="${URI}&pinSHA256=${PIN}"
-else
-  URI="${URI}&insecure=1"
-fi
-URI="${URI}#${KEY_NAME}"
+URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
 
 echo ""
 echo "$URI"
-
-if [ "$CERT_MODE" = "2" ]; then
-  echo ""
-  echo "CA Certificate — save as ca.crt and import on client:"
-  echo ""
-  cat /etc/hysteria/ca.crt
-fi
-
 echo ""
 echo "Run 'h2 help' for management commands."
 echo ""

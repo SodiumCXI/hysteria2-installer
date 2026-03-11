@@ -1,4 +1,5 @@
 #!/bin/bash
+
 set -euo pipefail
 
 [ "$EUID" -ne 0 ] && { echo "Error: run as root"; exit 1; }
@@ -14,16 +15,7 @@ source "$STATE_FILE"
 
 _build_uri() {
   local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}"
-  if [ "${CERT_MODE}" = "2" ]; then
-    local pin
-    pin=$(openssl x509 -noout -fingerprint -sha256 -in /etc/hysteria/server.crt | cut -d= -f2)
-    uri="${uri}&pinSHA256=${pin}"
-  else
-    uri="${uri}&insecure=1"
-  fi
-  uri="${uri}#${KEY_NAME}"
-  echo "$uri"
+  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}&insecure=1#${KEY_NAME}"
 }
 
 _write_state() {
@@ -33,7 +25,6 @@ PORT="${PORT}"
 AUTH_PASS="${AUTH_PASS}"
 OBFS_PASS="${OBFS_PASS}"
 MASQ_URL="${MASQ_URL}"
-CERT_MODE="${CERT_MODE}"
 KEY_NAME="${KEY_NAME}"
 STATE
   chmod 600 "$STATE_FILE"
@@ -75,48 +66,6 @@ _restart() {
     || die "Service failed. Check: journalctl -u hysteria-server -n 50"
 }
 
-_regen_certs() {
-  local mode="$1"
-  if [ "$mode" = "2" ]; then
-	local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-	read -rp "CA name [Hysteria2-CA]: " _in; local CA_NAME="${_in:-Hysteria2-CA}"
-	openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
-	openssl req -x509 -new -nodes \
-      -key /etc/hysteria/ca.key -sha256 -days 36500 \
-      -out /etc/hysteria/ca.crt \
-      -subj "/CN=${CA_NAME}" 2>/dev/null
-	openssl genrsa -out /etc/hysteria/server.key 2048 2>/dev/null
-	openssl req -new \
-      -key /etc/hysteria/server.key \
-      -out /etc/hysteria/server.csr \
-      -subj "/CN=${sni}" 2>/dev/null
-	openssl x509 -req \
-      -in /etc/hysteria/server.csr \
-      -CA /etc/hysteria/ca.crt -CAkey /etc/hysteria/ca.key \
-      -CAcreateserial -out /etc/hysteria/server.crt \
-      -days 36500 -sha256 \
-      -extfile <(echo "subjectAltName=DNS:${sni}") 2>/dev/null
-	rm -f /etc/hysteria/server.csr
-  else
-    openssl req -x509 -nodes -newkey rsa:2048 \
-      -keyout /etc/hysteria/server.key \
-      -out /etc/hysteria/server.crt \
-      -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
-  fi
-  chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
-  chmod 600 /etc/hysteria/server.key
-  chmod 644 /etc/hysteria/server.crt
-}
-
-_print_ca() {
-  if [ "${CERT_MODE}" = "2" ] && [ -f /etc/hysteria/ca.crt ]; then
-    echo ""
-    echo "CA Certificate — save as ca.crt and import on client:"
-    echo ""
-    cat /etc/hysteria/ca.crt
-  fi
-}
-
 cmd_help() {
   echo "  status     Service status"
   echo "  key        Connection URI"
@@ -137,7 +86,6 @@ cmd_status() {
   echo "Since      ${up_since:-n/a}"
   echo "IP         $SERVER_IP"
   echo "Port       $PORT"
-  echo "Cert       $([ "${CERT_MODE}" = "2" ] && echo 'CA-signed' || echo 'Self-signed')"
   echo "SNI        $(echo "$MASQ_URL" | sed 's|https://||;s|/||g')"
   echo "Key name   $KEY_NAME"
 }
@@ -145,7 +93,7 @@ cmd_status() {
 cmd_key() {
   echo ""
   _build_uri
-  _print_ca
+  echo ""
 }
 
 cmd_modify() {
@@ -165,25 +113,6 @@ cmd_modify() {
   if [ -n "$_in" ]; then MASQ_URL="https://${_in}/"; fi
   read -rp "Key name [${KEY_NAME}]: " _in; [ -n "$_in" ] && KEY_NAME="$_in"
 
-  echo "Certificates:"
-  echo "  1 Keep current"
-  echo "  2 Simple — self-signed, insecure=1"
-  echo "  3 CA — CA-signed, no insecure"
-  read -rp "Choose [1/2/3]: " _in
-  local cert_choice="${_in:-1}"
-
-  if [ "$cert_choice" = "2" ]; then
-    CERT_MODE="1"
-    echo "Regenerating certificates..."
-    _regen_certs "1"
-    echo "Done."
-  elif [ "$cert_choice" = "3" ]; then
-    CERT_MODE="2"
-    echo "Regenerating certificates..."
-    _regen_certs "2"
-    echo "Done."
-  fi
-
   echo "Applying changes..."
   _write_config
   _write_state
@@ -192,12 +121,11 @@ cmd_modify() {
 
   echo ""
   _build_uri
-  [ "$cert_choice" = "3" ] && _print_ca
   echo ""
 }
 
 cmd_uninstall() {
-  read -rp "Remove Hysteria2 and all data? [y/n]: " _in
+  read -rp "Remove Hysteria2 and all data? [y/N]: " _in
   [ "${_in,,}" != "y" ] && { echo "Aborted."; exit 0; }
 
   echo "Stopping service..."
