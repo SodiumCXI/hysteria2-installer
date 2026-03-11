@@ -143,7 +143,7 @@ echo "Done. h2 installed to $MANAGER_PATH"
 SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
 URI="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}"
 if [ "$CERT_MODE" = "2" ]; then
-  PIN=$(openssl x509 -in /etc/hysteria/server.crt -outform DER | openssl dgst -sha256 -binary | openssl base64)
+  PIN=$(openssl x509 -noout -fingerprint -sha256 -in /etc/hysteria/server.crt | cut -d= -f2)
   URI="${URI}&pinSHA256=${PIN}"
 else
   URI="${URI}&insecure=1"
