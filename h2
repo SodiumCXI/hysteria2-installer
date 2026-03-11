@@ -13,9 +13,15 @@ die()  { echo "Error: $*"; exit 1; }
 source "$STATE_FILE"
 
 _build_uri() {
-  local SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
-  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?SNI=${SNI}&obfs=salamander&obfs-password=${OBFS_PASS}"
-  [ "${CERT_MODE}" != "2" ] && uri="${uri}&insecure=1"
+  local sni="${MASQ_URL#https://}"; sni="${sni%/}"
+  local uri="hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?sni=${sni}&obfs=salamander&obfs-password=${OBFS_PASS}"
+  if [ "${CERT_MODE}" = "2" ]; then
+    local pin
+    pin=$(openssl x509 -in /etc/hysteria/server.crt -outform DER | openssl dgst -sha256 -binary | openssl base64)
+    uri="${uri}&pinSHA256=${pin}"
+  else
+    uri="${uri}&insecure=1"
+  fi
   uri="${uri}#${KEY_NAME}"
   echo "$uri"
 }
@@ -72,7 +78,7 @@ _restart() {
 _regen_certs() {
   local mode="$1"
   if [ "$mode" = "2" ]; then
-	local SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
+	local sni="${MASQ_URL#https://}"; sni="${sni%/}"
 	read -rp "CA name [Hysteria2-CA]: " _in; local CA_NAME="${_in:-Hysteria2-CA}"
 	openssl genrsa -out /etc/hysteria/ca.key 2048 2>/dev/null
 	openssl req -x509 -new -nodes \
@@ -83,13 +89,13 @@ _regen_certs() {
 	openssl req -new \
       -key /etc/hysteria/server.key \
       -out /etc/hysteria/server.csr \
-      -subj "/CN=${SNI}" 2>/dev/null
+      -subj "/CN=${sni}" 2>/dev/null
 	openssl x509 -req \
       -in /etc/hysteria/server.csr \
       -CA /etc/hysteria/ca.crt -CAkey /etc/hysteria/ca.key \
       -CAcreateserial -out /etc/hysteria/server.crt \
       -days 36500 -sha256 \
-      -extfile <(echo "subjectAltName=DNS:${SNI}") 2>/dev/null
+      -extfile <(echo "subjectAltName=DNS:${sni}") 2>/dev/null
 	rm -f /etc/hysteria/server.csr
   else
     openssl req -x509 -nodes -newkey rsa:2048 \
@@ -108,9 +114,6 @@ _print_ca() {
     echo "CA Certificate — save as ca.crt and import on client:"
     echo ""
     cat /etc/hysteria/ca.crt
-    echo ""
-  else 
-	echo ""
   fi
 }
 
