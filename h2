@@ -112,16 +112,16 @@ _restart() {
 }
 
 cmd_help() {
-  echo "  status      Service status"
-  echo "  key         Connection URI"
-  echo "  modify      Change settings"
+  echo "  status     Service status"
+  echo "  key        Connection URI"
+  echo "  modify     Change settings"
   if [ "$AUTH_MODE" = "2" ]; then
-    echo "  useradd     Add user"
-    echo "  userdel     Delete user"
-    echo "  userlist    List users"
+    echo "  useradd    Add user"
+    echo "  userdel    Delete user"
+    echo "  userlist   List users"
   fi
-  echo "  uninstall   Remove everything"
-  echo "  help        This message"
+  echo "  uninstall  Remove everything"
+  echo "  help       This message"
 }
 
 cmd_status() {
