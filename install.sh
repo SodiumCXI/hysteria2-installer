@@ -39,71 +39,67 @@ while True:
 "
 }
 
-if [ -f "/usr/local/bin/h2" ]; then
-  echo "Hysteria2 is already installed. Use 'h2 help'."
-  exit 0
-fi
+cmd_install() {
+  exec </dev/tty
 
-exec </dev/tty
+  SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 https://ifconfig.me)
+  [ -z "$SERVER_IP" ] && die "Could not detect external IP"
 
-SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 https://ifconfig.me)
-[ -z "$SERVER_IP" ] && die "Could not detect external IP"
+  echo ""
+  echo "Leave blank to keep current"
+  echo ""
 
-echo ""
-echo "Leave blank to keep current"
-echo ""
+  read -rp "Port [443]: " _in; PORT="${_in:-443}"
+  read -rp "SNI [google.com]: " _in; MASQ_URL="https://${_in:-google.com}/"
+  read -rp "Key name [Hysteria2]: " _in; KEY_NAME="${_in:-Hysteria2}"
 
-read -rp "Port [443]: " _in; PORT="${_in:-443}"
-read -rp "SNI [google.com]: " _in; MASQ_URL="https://${_in:-google.com}/"
-read -rp "Key name [Hysteria2]: " _in; KEY_NAME="${_in:-Hysteria2}"
+  OBFS_PASS=$(rand 16)
 
-OBFS_PASS=$(rand 16)
+  echo "Auth mode:"
+  echo "  1  Single password"
+  echo "  2  Users"
+  read -rp "Choose [1/2]: " _in; AUTH_MODE="${_in:-1}"
 
-echo "Auth mode:"
-echo "  1  Single password"
-echo "  2  Users"
-read -rp "Choose [1/2]: " _in; AUTH_MODE="${_in:-1}"
+  if [ "$AUTH_MODE" = "1" ]; then
+    AUTH_PASS=$(rand 16)
+  else
+    AUTH_PASS=""
+    read -rp "First username: " _in; FIRST_USER="${_in:-user}"
+    FIRST_PASS=$(rand 16)
+  fi
+  echo ""
 
-if [ "$AUTH_MODE" = "1" ]; then
-  AUTH_PASS=$(rand 16)
-else
-  AUTH_PASS=""
-  read -rp "First username: " _in; FIRST_USER="${_in:-user}"
-  FIRST_PASS=$(rand 16)
-fi
-echo ""
+  export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
-export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+  echo "Installing Hysteria2..."
 
-echo "Installing Hysteria2..."
+  set +o pipefail
+  run_until 'bash <(curl -fsSL https://get.hy2.sh/)' 'Congratulation'
+  stty sane 2>/dev/null || true
+  set -o pipefail
 
-set +o pipefail
-run_until 'bash <(curl -fsSL https://get.hy2.sh/)' 'Congratulation'
-stty sane 2>/dev/null || true
-set -o pipefail
+  echo "Generating certificate..."
+  mkdir -p /etc/hysteria
+  chown hysteria:hysteria /etc/hysteria
+  chmod 750 /etc/hysteria
 
-echo "Generating certificate..."
-mkdir -p /etc/hysteria
-chown hysteria:hysteria /etc/hysteria
-chmod 750 /etc/hysteria
+  openssl req -x509 -nodes -newkey rsa:2048 \
+    -keyout /etc/hysteria/server.key \
+    -out /etc/hysteria/server.crt \
+    -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
 
-openssl req -x509 -nodes -newkey rsa:2048 \
-  -keyout /etc/hysteria/server.key \
-  -out /etc/hysteria/server.crt \
-  -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null
+  chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
+  chmod 600 /etc/hysteria/server.key
+  chmod 644 /etc/hysteria/server.crt
+  echo "Done."
 
-chown hysteria:hysteria /etc/hysteria/server.key /etc/hysteria/server.crt
-chmod 600 /etc/hysteria/server.key
-chmod 644 /etc/hysteria/server.crt
-echo "Done."
+  echo "Writing config..."
 
-echo "Writing config..."
+  if [ "$AUTH_MODE" = "2" ]; then
+    echo "${FIRST_USER}:${FIRST_PASS}" > "$USERS_FILE"
+    chmod 600 "$USERS_FILE"
 
-if [ "$AUTH_MODE" = "2" ]; then
-  echo "${FIRST_USER}:${FIRST_PASS}" > "$USERS_FILE"
-  chmod 600 "$USERS_FILE"
-
-  cat > "$CONFIG_FILE" <<CONF
+    cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
 
 tls:
@@ -130,8 +126,8 @@ obfs:
   salamander:
     password: ${OBFS_PASS}
 CONF
-else
-  cat > "$CONFIG_FILE" <<CONF
+  else
+    cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
 
 tls:
@@ -157,9 +153,9 @@ obfs:
   salamander:
     password: ${OBFS_PASS}
 CONF
-fi
+  fi
 
-cat > "$STATE_FILE" <<STATE
+  cat > "$STATE_FILE" <<STATE
 SERVER_IP="${SERVER_IP}"
 PORT="${PORT}"
 AUTH_PASS="${AUTH_PASS}"
@@ -168,42 +164,52 @@ MASQ_URL="${MASQ_URL}"
 KEY_NAME="${KEY_NAME}"
 AUTH_MODE="${AUTH_MODE}"
 STATE
-chmod 600 "$STATE_FILE"
-echo "Done. Config: $CONFIG_FILE"
 
-echo "Configuring firewall..."
-if command -v ufw &>/dev/null; then
-  ufw allow "${PORT}/udp" >/dev/null 2>&1
-  ufw allow "${PORT}/tcp" >/dev/null 2>&1
-  echo "Done. Port ${PORT} opened."
+  chmod 600 "$STATE_FILE"
+  echo "Done. Config: $CONFIG_FILE"
+
+  echo "Configuring firewall..."
+  if command -v ufw &>/dev/null; then
+    ufw allow "${PORT}/udp" >/dev/null 2>&1
+    ufw allow "${PORT}/tcp" >/dev/null 2>&1
+    echo "Done. Port ${PORT} opened."
+  else
+    echo "Warning: ufw not found. Open port ${PORT}/udp manually."
+  fi
+
+  echo "Starting service..."
+  systemctl enable hysteria-server >/dev/null 2>&1
+  systemctl restart hysteria-server
+  sleep 1
+  systemctl is-active --quiet hysteria-server \
+    || die "Service failed. Check: journalctl -u hysteria-server -n 50"
+  echo "Done. Hysteria2 is running."
+
+  echo "Installing h2..."
+  curl -fsSL "https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2" \
+    -o "$MANAGER_PATH" || die "Failed to download h2 from GitHub"
+  chmod +x "$MANAGER_PATH"
+  echo "Done. h2 installed to $MANAGER_PATH"
+
+  SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
+  echo ""
+
+  if [ "$AUTH_MODE" = "2" ]; then
+    echo "[$FIRST_USER]"
+    echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}-${FIRST_USER}"
+  else
+    echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}"
+  fi
+
+  echo ""
+  echo "Run 'h2 help' for management commands."
+  echo ""
+}
+
+if [ -f "/usr/local/bin/h2" ]; then
+  echo "Hysteria2 is already installed. Use 'h2 help'."
+  exit 0
 else
-  echo "Warning: ufw not found. Open port ${PORT}/udp manually."
+  cmd_install
+  exit 0
 fi
-
-echo "Starting service..."
-systemctl enable hysteria-server >/dev/null 2>&1
-systemctl restart hysteria-server
-sleep 1
-systemctl is-active --quiet hysteria-server \
-  || die "Service failed. Check: journalctl -u hysteria-server -n 50"
-echo "Done. Hysteria2 is running."
-
-echo "Installing h2..."
-curl -fsSL "https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2" \
-  -o "$MANAGER_PATH" || die "Failed to download h2 from GitHub"
-chmod +x "$MANAGER_PATH"
-echo "Done. h2 installed to $MANAGER_PATH"
-
-SNI="${MASQ_URL#https://}"; SNI="${SNI%/}"
-echo ""
-
-if [ "$AUTH_MODE" = "2" ]; then
-  echo "[$FIRST_USER]"
-  echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}-${FIRST_USER}"
-else
-  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}"
-fi
-
-echo ""
-echo "Run 'h2 help' for management commands."
-echo ""
