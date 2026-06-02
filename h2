@@ -22,7 +22,7 @@ _build_uri_single() {
 _build_uri_user() {
   local user="$1" pass="$2"
   local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  echo "hysteria2://${user}:${pass}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${sni}&insecure=1#${KEY_NAME}"
+  echo "hysteria2://${user}:${pass}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${sni}&insecure=1#${KEY_NAME}-${user}"
 }
 
 _write_state() {

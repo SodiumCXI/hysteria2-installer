@@ -12,10 +12,39 @@ CONFIG_FILE="/etc/hysteria/config.yaml"
 rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
 die()  { echo "Error: $*"; exit 1; }
 
+run_until() {
+  local cmd="$1"
+  local needle="$2"
+  script -qefc "$cmd" /dev/null |
+    python3 -u -c "
+import sys
+needle = b'$needle'
+line = b''
+while True:
+    ch = sys.stdin.buffer.read(1)
+    if not ch:
+        if line:
+            sys.stdout.buffer.write(line)
+            sys.stdout.buffer.flush()
+        break
+    line += ch
+    if ch in (b'\n', b'\r'):
+        sys.stdout.buffer.write(line)
+        sys.stdout.buffer.flush()
+        if needle in line:
+            sys.stdout.buffer.write(b'\n')
+            sys.stdout.buffer.flush()
+            break
+        line = b''
+"
+}
+
 if [ -f "/usr/local/bin/h2" ]; then
   echo "Hysteria2 is already installed. Use 'h2 help'."
   exit 0
 fi
+
+exec </dev/tty
 
 SERVER_IP=$(curl -s --max-time 5 https://api.ipify.org || curl -s --max-time 5 https://ifconfig.me)
 [ -z "$SERVER_IP" ] && die "Could not detect external IP"
@@ -47,7 +76,11 @@ echo ""
 export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 echo "Installing Hysteria2..."
-bash <(curl -fsSL https://get.hy2.sh/) 2>&1 | grep -v "^$" | sed '/Congratulation/q'
+
+set +o pipefail
+run_until 'bash <(curl -fsSL https://get.hy2.sh/)' 'Congratulation'
+stty sane 2>/dev/null || true
+set -o pipefail
 
 echo "Generating certificate..."
 mkdir -p /etc/hysteria
@@ -166,7 +199,7 @@ echo ""
 
 if [ "$AUTH_MODE" = "2" ]; then
   echo "[$FIRST_USER]"
-  echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}"
+  echo "hysteria2://${FIRST_USER}:${FIRST_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}-${FIRST_USER}"
 else
   echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${SNI}&insecure=1#${KEY_NAME}"
 fi

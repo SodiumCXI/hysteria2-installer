@@ -1,7 +1,7 @@
 # hysteria2-installer
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/install.sh -o install.sh && bash install.sh
+curl -fsSL https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/install.sh | bash
 ```
 
 Installs Hysteria2, generates access keys, configures UFW, enables autostart and installs the `h2` management tool.
