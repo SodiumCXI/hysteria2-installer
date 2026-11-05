@@ -4,25 +4,38 @@ set -euo pipefail
 
 [ "$EUID" -ne 0 ] && { echo "Error: run as root"; exit 1; }
 
-STATE_FILE="/etc/hysteria/.state"
-USERS_FILE="/etc/hysteria/.users"
-CONFIG_FILE="/etc/hysteria/config.yaml"
+export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+MANAGER_PATH="/usr/local/bin/h2"
+MANAGER_URL="https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/h2"
+CONF_DIR="/etc/hysteria"
+STATE_FILE="${CONF_DIR}/.state"
+USERS_FILE="${CONF_DIR}/.users"
+CONFIG_FILE="${CONF_DIR}/config.yaml"
+CERT_FILE="${CONF_DIR}/server.crt"
+KEY_FILE="${CONF_DIR}/server.key"
+SYSCTL_FILE="/etc/sysctl.d/99-hysteria.conf"
+DROPIN_DIR="/etc/systemd/system/hysteria-server.service.d"
 
 rand() { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "$1"; true; }
 die()  { echo "Error: $*"; exit 1; }
 
-[ ! -f "$STATE_FILE" ] && die "Hysteria2 is not installed"
-source "$STATE_FILE"
+_valid_port()   { [[ "$1" =~ ^[1-9][0-9]{0,4}$ ]] && [ "$1" -le 65535 ]; }
+_valid_sni()    { [[ "$1" =~ ^[A-Za-z0-9.-]+$ ]]; }
+_valid_user()   { [[ "$1" =~ ^[a-z0-9_-]{1,32}$ ]]; }
+_valid_secret() { [[ "$1" =~ ^[A-Za-z0-9._~-]{8,128}$ ]]; }
 
-_build_uri_single() {
-  local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  echo "hysteria2://${AUTH_PASS}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${sni}&insecure=1#${KEY_NAME}"
-}
+_user_exists() { awk -F: -v u="$1" 'tolower($1) == u { f = 1 } END { exit !f }' "$USERS_FILE" 2>/dev/null; }
 
-_build_uri_user() {
-  local user="$1" pass="$2"
-  local sni="${MASQ_URL#https://}"; sni="${sni%/}"
-  echo "hysteria2://${user}:${pass}@${SERVER_IP}:${PORT}?obfs=salamander&obfs-password=${OBFS_PASS}&sni=${sni}&insecure=1#${KEY_NAME}-${user}"
+_load_state() {
+  local k v
+  while IFS='=' read -r k v; do
+    v="${v#\"}"; v="${v%\"}"
+    case "$k" in
+      SERVER_IP|PORT|AUTH_PASS|OBFS_PASS|SNI|KEY_NAME|AUTH_MODE) printf -v "$k" '%s' "$v" ;;
+      MASQ_URL) v="${v#https://}"; SNI="${v%/}"; LEGACY="1" ;;
+    esac
+  done < "$STATE_FILE"
 }
 
 _write_state() {
@@ -31,7 +44,7 @@ SERVER_IP="${SERVER_IP}"
 PORT="${PORT}"
 AUTH_PASS="${AUTH_PASS}"
 OBFS_PASS="${OBFS_PASS}"
-MASQ_URL="${MASQ_URL}"
+SNI="${SNI}"
 KEY_NAME="${KEY_NAME}"
 AUTH_MODE="${AUTH_MODE}"
 STATE
@@ -39,76 +52,258 @@ STATE
 }
 
 _write_config() {
+  local auth u p
   if [ "$AUTH_MODE" = "2" ]; then
-    [ ! -f "$USERS_FILE" ] && die "Users file not found"
-    local userpass_block=""
+    [ -f "$USERS_FILE" ] || die "Users file not found"
+    auth=$'ignoreClientBandwidth: true\n\nauth:\n  type: userpass\n  userpass:'
     while IFS=: read -r u p; do
-      userpass_block="${userpass_block}    ${u}: ${p}"$'\n'
+      auth+=$'\n'"    \"${u}\": \"${p}\""
     done < "$USERS_FILE"
-      userpass_block="${userpass_block%$'\n'}"
-
-    cat > "$CONFIG_FILE" <<CONF
-listen: :${PORT}
-
-tls:
-  cert: /etc/hysteria/server.crt
-  key: /etc/hysteria/server.key
-
-bandwidth:
-  up: 1 gbps
-  down: 1 gbps
-
-auth:
-  type: userpass
-  userpass:
-${userpass_block}
-
-masquerade:
-  type: proxy
-  proxy:
-    url: ${MASQ_URL}
-    rewriteHost: true
-
-obfs:
-  type: salamander
-  salamander:
-    password: ${OBFS_PASS}
-CONF
   else
-    cat > "$CONFIG_FILE" <<CONF
+    auth=$'auth:\n  type: password\n  password: "'"${AUTH_PASS}"'"'
+  fi
+
+  cat > "$CONFIG_FILE" <<CONF
 listen: :${PORT}
 
 tls:
-  cert: /etc/hysteria/server.crt
-  key: /etc/hysteria/server.key
+  cert: ${CERT_FILE}
+  key: ${KEY_FILE}
 
-bandwidth:
-  up: 1 gbps
-  down: 1 gbps
-
-auth:
-  type: password
-  password: ${AUTH_PASS}
-
-masquerade:
-  type: proxy
-  proxy:
-    url: ${MASQ_URL}
-    rewriteHost: true
+${auth}
 
 obfs:
   type: salamander
   salamander:
-    password: ${OBFS_PASS}
+    password: "${OBFS_PASS}"
+
+acl:
+  inline:
+    - reject(0.0.0.0/8)
+    - reject(10.0.0.0/8)
+    - reject(100.64.0.0/10)
+    - reject(127.0.0.0/8)
+    - reject(169.254.0.0/16)
+    - reject(172.16.0.0/12)
+    - reject(192.168.0.0/16)
+    - reject(::/128)
+    - reject(::1/128)
+    - reject(fc00::/7)
+    - reject(fe80::/10)
+    - reject(all, tcp/25)
 CONF
+}
+
+_setup_system() {
+  chown -R root:root "$CONF_DIR"
+  chgrp hysteria "$CONF_DIR" "$CONFIG_FILE" "$KEY_FILE"
+  chmod 750 "$CONF_DIR"
+  chmod 640 "$CONFIG_FILE" "$KEY_FILE"
+  chmod 644 "$CERT_FILE"
+
+  printf 'net.core.rmem_max=16777216\nnet.core.wmem_max=16777216\n' > "$SYSCTL_FILE"
+  sysctl -q -p "$SYSCTL_FILE" 2>/dev/null || echo "Warning: could not apply $SYSCTL_FILE"
+
+  mkdir -p "$DROPIN_DIR"
+  printf '[Service]\nEnvironment=HYSTERIA_DISABLE_UPDATE_CHECK=1\nRestart=on-failure\nRestartSec=3\nNice=-5\n' > "${DROPIN_DIR}/override.conf"
+  systemctl daemon-reload
+}
+
+_fw_open() {
+  if command -v ufw &>/dev/null; then
+    ufw allow "${1}/udp" >/dev/null 2>&1 || echo "Warning: could not open port ${1}/udp."
+  else
+    echo "Warning: ufw not found. Open port ${1}/udp manually."
   fi
+}
+
+_fw_close() {
+  command -v ufw &>/dev/null || return 0
+  ufw delete allow "${1}/udp" >/dev/null 2>&1 || true
+}
+
+_fw_drop_legacy_tcp() {
+  [ -n "$LEGACY" ] && command -v ufw &>/dev/null && command -v ss &>/dev/null || return 0
+  [[ "$(ss -ltn)" =~ :${PORT}[[:space:]] ]] || ufw delete allow "${PORT}/tcp" >/dev/null 2>&1 || true
 }
 
 _restart() {
   systemctl restart hysteria-server
-  sleep 1
-  systemctl is-active --quiet hysteria-server \
-    || die "Service failed. Check: journalctl -u hysteria-server -n 50"
+  sleep 2
+  systemctl is-active --quiet hysteria-server
+}
+
+_backup() {
+  local f
+  for f in "$CONFIG_FILE" "$STATE_FILE" "$USERS_FILE"; do
+    rm -f "${f}.bak"
+    [ ! -f "$f" ] || cp -p "$f" "${f}.bak"
+  done
+}
+
+_commit() {
+  _write_state
+  _write_config
+
+  local f
+  if _restart; then
+    for f in "$CONFIG_FILE" "$STATE_FILE" "$USERS_FILE"; do rm -f "${f}.bak"; done
+    return 0
+  fi
+
+  for f in "$CONFIG_FILE" "$STATE_FILE" "$USERS_FILE"; do
+    [ ! -f "${f}.bak" ] || mv -f "${f}.bak" "$f"
+  done
+  _restart || true
+  die "Service failed, changes reverted. Check: journalctl -u hysteria-server -n 50"
+}
+
+_urlencode() {
+  local LC_ALL=C s="$1" c out="" i
+  for ((i = 0; i < ${#s}; i++)); do
+    c="${s:i:1}"
+    case "$c" in
+      [a-zA-Z0-9._~-]) out+="$c" ;;
+      *) out+="%$(printf '%s' "$c" | od -An -tx1 | tr -d ' ')" ;;
+    esac
+  done
+  printf '%s' "$out"
+}
+
+_uri() {
+  local auth="$1" name="$2" host="$SERVER_IP" pin
+  [[ "$host" != *:* ]] || host="[${host}]"
+  pin=$(openssl x509 -noout -fingerprint -sha256 -in "$CERT_FILE" | cut -d= -f2 | tr -d : | tr 'A-F' 'a-f')
+  echo "hysteria2://${auth}@${host}:${PORT}?obfs=salamander&obfs-password=$(_urlencode "$OBFS_PASS")&sni=${SNI}&insecure=1&pinSHA256=${pin}#$(_urlencode "$name")"
+}
+
+_uri_user() {
+  _uri "$(_urlencode "$1"):$(_urlencode "$2")" "${KEY_NAME}-${1}"
+}
+
+_ask_settings() {
+  read -rp "Port [${PORT}]: " _in; PORT="${_in:-$PORT}"
+  _valid_port "$PORT" || die "Invalid port: $PORT"
+
+  read -rp "SNI [${SNI}]: " _in; SNI="${_in:-$SNI}"
+  _valid_sni "$SNI" || die "Invalid SNI: $SNI"
+
+  read -rp "Key name [${KEY_NAME}]: " _in; KEY_NAME="${_in:-$KEY_NAME}"
+}
+
+_ask_secret() {
+  local label="$1" var="$2"
+  read -rp "${label} [${!var}]: " _in
+  [ -n "$_in" ] || return 0
+  [ "$_in" != "random" ] || _in=$(rand 16)
+  _valid_secret "$_in" || die "Invalid password: use 8-128 of A-Z a-z 0-9 . _ ~ -"
+  printf -v "$var" '%s' "$_in"
+}
+
+_ask_auth() {
+  FIRST_USER=""
+
+  echo "Auth mode:"
+  echo "  1  Single password"
+  echo "  2  Users"
+  read -rp "Choose [1/2]: " _in
+  local mode="${_in:-${AUTH_MODE:-1}}"
+  [[ "$mode" =~ ^[12]$ ]] || die "Invalid auth mode: $mode"
+
+  if [ "$mode" = "$AUTH_MODE" ]; then
+    [ "$mode" = "2" ] || _ask_secret "Auth password" AUTH_PASS
+    return 0
+  fi
+
+  AUTH_MODE="$mode"
+  if [ "$AUTH_MODE" = "2" ]; then
+    AUTH_PASS=""
+    read -rp "First username: " _in; FIRST_USER="${_in:-user}"; FIRST_USER="${FIRST_USER,,}"
+    _valid_user "$FIRST_USER" || die "Invalid username: use a-z 0-9 _ -"
+  else
+    AUTH_PASS=$(rand 16)
+  fi
+}
+
+_sync_users() {
+  if [ -n "$FIRST_USER" ]; then
+    echo "${FIRST_USER}:$(rand 16)" > "$USERS_FILE"
+    chmod 600 "$USERS_FILE"
+  elif [ "$AUTH_MODE" = "1" ]; then
+    rm -f "$USERS_FILE"
+  fi
+}
+
+cmd_install() {
+  command -v openssl &>/dev/null || die "openssl is required"
+
+  SERVER_IP=$(curl -fs --max-time 5 https://api.ipify.org || curl -fs --max-time 5 https://ifconfig.me || true)
+  [[ "$SERVER_IP" =~ ^[0-9a-fA-F:.]+$ ]] || die "Could not detect external IP"
+
+  PORT="443" SNI="google.com" KEY_NAME="Hysteria2" AUTH_MODE="" AUTH_PASS=""
+  OBFS_PASS=$(rand 16)
+
+  echo ""
+  echo "Leave blank for default"
+  echo ""
+
+  _ask_settings
+  _ask_auth
+  echo ""
+
+  echo "Installing Hysteria2..."
+  bash <(curl -fsSL https://get.hy2.sh/) >/dev/null
+  command -v hysteria &>/dev/null || die "Failed to install Hysteria2"
+  echo "Done."
+
+  echo "Generating certificate..."
+  openssl req -x509 -nodes -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+    -keyout "$KEY_FILE" -out "$CERT_FILE" -days 36500 -subj "/CN=${SERVER_IP}" 2>/dev/null \
+    || die "Failed to generate certificate"
+  echo "Done."
+
+  echo "Writing config..."
+  _sync_users
+  _write_state
+  _write_config
+  _setup_system
+  echo "Done. Config: $CONFIG_FILE"
+
+  echo "Configuring firewall..."
+  _fw_open "$PORT"
+  echo "Done."
+
+  echo "Starting service..."
+  systemctl enable hysteria-server >/dev/null 2>&1
+  _restart || die "Service failed. Check: journalctl -u hysteria-server -n 50"
+  echo "Done. Hysteria2 is running."
+
+  cmd_key
+  echo "Run 'h2 help' for management commands."
+  echo ""
+}
+
+cmd_update() {
+  echo "Updating Hysteria2..."
+  bash <(curl -fsSL https://get.hy2.sh/) >/dev/null
+  echo "Done."
+
+  echo "Updating h2..."
+  curl -fsSL "$MANAGER_URL" -o "${MANAGER_PATH}.new" || die "Failed to download h2 from GitHub"
+  chmod +x "${MANAGER_PATH}.new"
+  mv -f "${MANAGER_PATH}.new" "$MANAGER_PATH"
+  echo "Done."
+
+  exec "$MANAGER_PATH" _apply
+}
+
+cmd_apply() {
+  echo "Applying settings..."
+  _setup_system
+  _backup
+  _commit
+  _fw_drop_legacy_tcp
+  echo "Done. Existing keys keep working, 'h2 key' shows them with the certificate pin."
 }
 
 cmd_help() {
@@ -120,6 +315,7 @@ cmd_help() {
     echo "  userdel    Delete user"
     echo "  userlist   List users"
   fi
+  echo "  update     Update Hysteria2 and h2"
   echo "  uninstall  Remove everything"
   echo "  help       This message"
 }
@@ -133,7 +329,7 @@ cmd_status() {
   echo "Autostart  $enabled"
   echo "IP         $SERVER_IP"
   echo "Port       $PORT"
-  echo "SNI        $(echo "$MASQ_URL" | sed 's|https://||;s|/||g')"
+  echo "SNI        $SNI"
   echo "Auth       $([ "$AUTH_MODE" = "2" ] && echo 'users' || echo 'single')"
   echo "Key name   $KEY_NAME"
 }
@@ -141,96 +337,73 @@ cmd_status() {
 cmd_key() {
   echo ""
   if [ "$AUTH_MODE" = "2" ]; then
-    [ ! -f "$USERS_FILE" ] && die "Users file not found"
+    [ -f "$USERS_FILE" ] || die "Users file not found"
     while IFS=: read -r u p; do
       echo "[$u]"
-      _build_uri_user "$u" "$p"
+      _uri_user "$u" "$p"
       echo ""
     done < "$USERS_FILE"
   else
-    _build_uri_single
+    _uri "$(_urlencode "$AUTH_PASS")" "$KEY_NAME"
     echo ""
   fi
 }
 
 cmd_modify() {
+  local old_port="$PORT"
+
   echo ""
   echo "Leave blank to keep current, 'random' to regenerate password."
   echo ""
 
-  read -rp "Port [${PORT}]: " _in; [ -n "$_in" ] && PORT="$_in"
-
-  read -rp "Obfs password [${OBFS_PASS}]: " _in
-  if   [ "$_in" = "random" ]; then OBFS_PASS=$(rand 16)
-  elif [ -n "$_in" ];         then OBFS_PASS="$_in"; fi
-
-  local masq_display="${MASQ_URL#https://}"; masq_display="${masq_display%/}"
-  read -rp "SNI [${masq_display}]: " _in
-  if [ -n "$_in" ]; then MASQ_URL="https://${_in}/"; fi
-
-  read -rp "Key name [${KEY_NAME}]: " _in; [ -n "$_in" ] && KEY_NAME="$_in"
-
-  echo "Auth mode:"
-  echo "  1  Single password"
-  echo "  2  Users"
-  read -rp "Choose [1/2]: " _in
-  local new_mode="${_in:-$AUTH_MODE}"
-  [ "$new_mode" != "1" ] && [ "$new_mode" != "2" ] && new_mode="$AUTH_MODE"
-
-  if [ "$new_mode" != "$AUTH_MODE" ]; then
-    AUTH_MODE="$new_mode"
-    if [ "$AUTH_MODE" = "2" ]; then
-      AUTH_PASS=""
-      read -rp "First username: " _in; local FIRST_USER="${_in:-user}"
-      local FIRST_PASS; FIRST_PASS=$(rand 16)
-      echo "${FIRST_USER}:${FIRST_PASS}" > "$USERS_FILE"
-      chmod 600 "$USERS_FILE"
-    else
-      AUTH_PASS=$(rand 16)
-      rm -f "$USERS_FILE"
-    fi
-  elif [ "$AUTH_MODE" = "1" ]; then
-    read -rp "Auth password [${AUTH_PASS}]: " _in
-    if   [ "$_in" = "random" ]; then AUTH_PASS=$(rand 16)
-    elif [ -n "$_in" ];         then AUTH_PASS="$_in"; fi
-  fi
+  _ask_settings
+  _ask_secret "Obfs password" OBFS_PASS
+  _ask_auth
 
   echo "Applying changes..."
-  _write_config
-  _write_state
-  _restart
+  _backup
+  _sync_users
+  _commit
+
+  if [ "$PORT" != "$old_port" ]; then
+    _fw_open "$PORT"
+    _fw_close "$old_port"
+  fi
+
   echo "Done."
   cmd_key
 }
 
 cmd_useradd() {
-  [ -z "${1:-}" ] && die "Usage: h2 useradd <username>"
-  local user="$1"
-  grep -q "^${user}:" "$USERS_FILE" 2>/dev/null && die "User '$user' already exists"
+  [ -n "${1:-}" ] || die "Usage: h2 useradd <username>"
+  local user="${1,,}"
+  _valid_user "$user" || die "Invalid username: use a-z 0-9 _ -"
+  ! _user_exists "$user" || die "User '$user' already exists"
   local pass; pass=$(rand 16)
+  _backup
   echo "${user}:${pass}" >> "$USERS_FILE"
-  _write_config
-  _restart
+  _commit
   echo ""
   echo "[$user]"
-  _build_uri_user "$user" "$pass"
+  _uri_user "$user" "$pass"
   echo ""
 }
 
 cmd_userdel() {
-  [ -z "${1:-}" ] && die "Usage: h2 userdel <username>"
-  local user="$1"
-  grep -q "^${user}:" "$USERS_FILE" 2>/dev/null || die "User '$user' not found"
+  [ -n "${1:-}" ] || die "Usage: h2 userdel <username>"
+  local user="${1,,}"
+  _user_exists "$user" || die "User '$user' not found"
   local count; count=$(wc -l < "$USERS_FILE")
-  [ "$count" -le 1 ] && die "Cannot delete the last user"
-  sed -i "/^${user}:/d" "$USERS_FILE"
-  _write_config
-  _restart
+  [ "$count" -gt 1 ] || die "Cannot delete the last user"
+  _backup
+  local rest; rest=$(awk -F: -v u="$user" 'tolower($1) != u' "$USERS_FILE")
+  printf '%s\n' "$rest" > "$USERS_FILE"
+  _commit
   echo "User '$user' removed."
 }
 
 cmd_userlist() {
-  [ ! -f "$USERS_FILE" ] && die "Users file not found"
+  [ -f "$USERS_FILE" ] || die "Users file not found"
   echo ""
   local i=1
   while IFS=: read -r u p; do
@@ -256,7 +429,12 @@ cmd_uninstall() {
   echo "Removing systemd units..."
   rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server.service
   rm -f /etc/systemd/system/multi-user.target.wants/hysteria-server@*.service
+  rm -rf "$DROPIN_DIR"
   systemctl daemon-reload
+  echo "Done."
+
+  echo "Removing system tuning..."
+  rm -f "$SYSCTL_FILE"
   echo "Done."
 
   echo "Removing hysteria user..."
@@ -268,24 +446,31 @@ cmd_uninstall() {
   fi
 
   echo "Removing config and certificates..."
-  rm -rf /etc/hysteria
+  rm -rf "$CONF_DIR"
   echo "Done."
 
-  if command -v ufw &>/dev/null; then
-    echo "Removing firewall rules..."
-    ufw delete allow "${PORT}/udp" >/dev/null 2>&1 || true
-    ufw delete allow "${PORT}/tcp" >/dev/null 2>&1 || true
-    echo "Done."
-  fi
+  echo "Removing firewall rules..."
+  _fw_close "$PORT"
+  echo "Done."
 
   echo "Removing h2..."
-  rm -f /usr/local/bin/h2
+  rm -f "$MANAGER_PATH"
   echo "Done."
 
   echo ""
   echo "Hysteria2 removed."
   echo ""
 }
+
+if [ "${1:-}" = "install" ]; then
+  [ ! -f "$STATE_FILE" ] || die "Hysteria2 is already installed. Use 'h2 help'."
+  cmd_install
+  exit 0
+fi
+
+[ -f "$STATE_FILE" ] || die "Hysteria2 is not installed"
+LEGACY=""
+_load_state
 
 case "${1:-help}" in
   status)    cmd_status              ;;
@@ -294,6 +479,8 @@ case "${1:-help}" in
   useradd)   [ "$AUTH_MODE" != "2" ] && die "Not in users mode"; cmd_useradd "${2:-}" ;;
   userdel)   [ "$AUTH_MODE" != "2" ] && die "Not in users mode"; cmd_userdel "${2:-}" ;;
   userlist)  [ "$AUTH_MODE" != "2" ] && die "Not in users mode"; cmd_userlist ;;
+  update)    cmd_update              ;;
+  _apply)    cmd_apply               ;;
   uninstall) cmd_uninstall           ;;
   help)      cmd_help                ;;
   *) echo "Unknown command: ${1}"; cmd_help; exit 1 ;;

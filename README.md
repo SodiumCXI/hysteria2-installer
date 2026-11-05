@@ -4,7 +4,9 @@
 curl -fsSL https://raw.githubusercontent.com/SodiumCXI/hysteria2-installer/main/install.sh | bash
 ```
 
-Installs Hysteria2, generates access keys, configures UFW, enables autostart and installs the `h2` management tool.
+Installs Hysteria2, generates access keys, tunes UDP buffers, configures UFW, enables autostart and installs the `h2` management tool.
+
+Run it again on an installed server to update it.
 
 ### Management
 
@@ -15,6 +17,7 @@ h2 modify     Change settings
 h2 useradd    Add user
 h2 userdel    Delete user
 h2 userlist   List users
+h2 update     Update Hysteria2 and h2
 h2 uninstall  Remove everything
 ```
 
